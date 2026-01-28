@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rugby Team Sheet Sidecar</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html-to-image@1.11.11/dist/html-to-image.js"></script>
+    <script src="https://unpkg.com/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
+    <style>
+        .team-sheet-svg {
+            /* Slightly larger base size for better on-screen and export resolution */
+            width: 1000px;
+            height: 1250px;
+            background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function TeamSheetApp() {
+            const [worksheets, setWorksheets] = useState([]);
+            const [selectedWorksheet, setSelectedWorksheet] = useState('');
+            const [teamData, setTeamData] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [featuredImage, setFeaturedImage] = useState(null);
+            const [featuredPlayer, setFeaturedPlayer] = useState('');
+            const [featuredLabelType, setFeaturedLabelType] = useState('Captain');
+            const [featuredLabelCustom, setFeaturedLabelCustom] = useState('');
+            const [nameFormat, setNameFormat] = useState('initial'); // 'full', 'surname', 'initial'
+            const [kitText, setKitText] = useState('Number 1s'); // 'Number 1s', 'Polos', 'Custom'
+            const [kitTextCustom, setKitTextCustom] = useState('');
+            const [metadata, setMetadata] = useState({
+                kickoff: '',
+                meet_time: '',
+                location: '',
+                custom_title: 'SANDBACH RUFC U15s',
+                match_date: ''
+            });
+
+            // Helper to parse opponent name from fixture title (e.g., "19: Chester (A)" → "Chester")
+            const parseOpponent = (fixtureName) => {
+                if (!fixtureName) return '';
+                // Match pattern: "NN: TeamName (H/A)"
+                const match = fixtureName.match(/^\d+:\s*(.+?)\s*\([HA]\)$/i);
+                return match ? match[1].trim() : fixtureName;
+            };
+
+            // Form validation - all required fields must be filled
+            const isFormValid = () => {
+                if (!featuredPlayer) return false;
+                if (!metadata.kickoff) return false;
+                if (!metadata.meet_time) return false;
+                if (!metadata.location) return false;
+                if (metadata.location === 'Custom' && !metadata.custom_location) return false;
+                if (!metadata.custom_title) return false;
+                if (!metadata.match_date) return false;
+                if (kitText === 'Custom' && !kitTextCustom) return false;
+                return true;
+            };
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+            useEffect(() => {
+                checkAuthStatus();
+                fetchWorksheets();
+            }, []);
+
+            useEffect(() => {
+                const loadFeaturedImage = async () => {
+                    if (!featuredPlayer) {
+                        setFeaturedImage(null);
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch(`/api/player-image/${featuredPlayer}`);
+                        const data = await response.json();
+                        if (data.success && data.image_url) {
+                            // Fetch the actual image to convert to data URL
+                            const imgResponse = await fetch(data.image_url);
+                            
+                            if (!imgResponse.ok) {
+                                throw new Error('Image fetch failed');
+                            }
+
+                            const blob = await imgResponse.blob();
+                            // Reject SVGs (likely placeholders) and non-images
+                            if (!blob.type.startsWith('image/') || blob.type.includes('svg')) {
+                                throw new Error('Invalid image type');
+                            }
+
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                                const dataUrl = reader.result;
+                                // Reject fake PNGs (SVG/text disguised as PNG)
+                                try {
+                                    const base64 = dataUrl.split(',')[1];
+                                    const decoded = atob(base64.substring(0, 100)); // Check first ~75 bytes
+                                    if (decoded.startsWith('<!--') || decoded.startsWith('<svg') || decoded.startsWith('<?xml')) {
+                                        console.warn('Rejected fake image (SVG/XML content in PNG)');
+                                        setFeaturedImage(null);
+                                        return;
+                                    }
+                                } catch (e) {
+                                    // If decoding fails, reject
+                                    setFeaturedImage(null);
+                                    return;
+                                }
+                                setFeaturedImage(dataUrl);
+                            };
+                            reader.readAsDataURL(blob);
+                        } else {
+                            setFeaturedImage(null);
+                        }
+                    } catch (error) {
+                        console.error('Error loading featured image:', error);
+                        setFeaturedImage(null);
+                    }
+                };
+
+                loadFeaturedImage();
+            }, [featuredPlayer]);
+
+            const checkAuthStatus = async () => {
+                try {
+                    const response = await fetch('/api/auth/status');
+                    const data = await response.json();
+                    setIsAuthenticated(data.authenticated);
+                } catch (error) {
+                    console.error('Error checking auth status:', error);
+                }
+            };
+
+            const fetchWorksheets = async () => {
+                try {
+                    const response = await fetch('/api/worksheets');
+                    const data = await response.json();
+                    if (data.success) {
+                        setWorksheets(data.worksheets);
+                    }
+                } catch (error) {
+                    console.error('Error fetching worksheets:', error);
+                }
+            };
+
+            const handleConnect = () => {
+                window.location.href = '/auth/login';
+            };
+
+            const handleLogout = () => {
+                window.location.href = '/auth/logout';
+            };
+
+            const fetchTeamData = async (worksheetName) => {
+                setLoading(true);
+                setError('');
+                setTeamData(null);
+                // Reset featured player to force selection
+                setFeaturedPlayer('');
+                try {
+                    const response = await fetch(`/api/worksheet/${worksheetName}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        setTeamData(data);
+                        // Featured player starts empty - user must select
+                        setFeaturedPlayer('');
+                        
+                        // Auto-populate location if Home match
+                        if (data.fixture_info) {
+                            const homeAway = data.fixture_info.home_away && data.fixture_info.home_away.toLowerCase();
+                            if (homeAway === 'home' || homeAway === 'h') {
+                                setMetadata(prev => ({
+                                    ...prev,
+                                    location: 'Sandbach RUFC, Bradwall Road, Sandbach. CW11 1RA'
+                                }));
+                            }
+                            
+                            // Auto-populate match date if available
+                            if (data.fixture_info.match_date) {
+                                // Try to parse the date - format might vary
+                                let dateStr = data.fixture_info.match_date;
+                                // If it's in UK format (DD/MM/YYYY), convert to YYYY-MM-DD for input
+                                if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+                                    const parts = dateStr.split('/');
+                                    dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                                }
+                                setMetadata(prev => ({...prev, match_date: dateStr}));
+                            }
+                        }
+                    } else {
+                        setError(data.error || 'Failed to load team data');
+                    }
+                } catch (error) {
+                    console.error('Error fetching team data:', error);
+                    setError('Network error: Failed to connect to server');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleWorksheetChange = (e) => {
+                const worksheet = e.target.value;
+                setSelectedWorksheet(worksheet);
+                setError(''); // Clear error when changing selection
+                if (worksheet) {
+                    fetchTeamData(worksheet);
+                } else {
+                    setTeamData(null);
+                }
+            };
+
+            const exportImage = () => {
+                // Export the full preview area rather than just the raw SVG to avoid cropping
+                const target = document.getElementById('capture-area') || document.getElementById('team-sheet-svg');
+                if (!target) {
+                    console.error('Export target not found');
+                    return;
+                }
+
+                htmlToImage
+                    .toPng(target, {
+                        cacheBust: true,
+                        pixelRatio: 2, // 2x resolution export
+                        imagePlaceholder: '/static/pitch-assets/player-silhouette.png', // Fallback
+                        width: 1000,
+                        height: 1250,
+                        backgroundColor: '#022c22',
+                    })
+                    .then((dataUrl) => {
+                        const link = document.createElement('a');
+                        link.download = `team-sheet-${selectedWorksheet || 'export'}.png`;
+                        link.href = dataUrl;
+                        link.click();
+                    })
+                    .catch((error) => {
+                        console.error('Error exporting image:', error);
+                        alert('Error exporting image. Check console for details.');
+                    });
+            };
+
+            const captureStyle = {
+                width: '1000px',
+                height: '1250px',
+                flexShrink: 0,
+                backgroundColor: '#022c22'
+            };
+
+            return (
+                <div className="container mx-auto px-4 py-8">
+                    <div className="flex justify-between items-center mb-8">
+                        <h1 className="text-3xl font-bold text-gray-800">Rugby Team Sheet Generator</h1>
+                        <div className="flex items-center space-x-4">
+                            {isAuthenticated ? (
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-green-600 font-medium">✓ Connected</span>
+                                    <button
+                                        onClick={handleLogout}
+                                        className="text-red-600 hover:text-red-800 font-medium"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={handleConnect}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+                                >
+                                    Connect to Google Sheets
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {/* Controls Panel - Full Width, 2 Columns */}
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+                            <h2 className="text-xl font-semibold mb-4">Team Selection</h2>
+                            
+                            {!isAuthenticated && (
+                                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                                    <p className="text-yellow-800 text-sm">
+                                        Connect to Google Sheets to access your team data. Using mock data for demonstration.
+                                    </p>
+                                </div>
+                            )}
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left Column */}
+                                <div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Select Fixture
+                                        </label>
+                                        <select
+                                            value={selectedWorksheet}
+                                            onChange={handleWorksheetChange}
+                                            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                        >
+                                            <option value="">Choose a fixture...</option>
+                                            {worksheets.map(sheet => (
+                                                <option key={sheet} value={sheet}>{sheet}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {error && (
+                                        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                                            <p className="text-red-800 text-sm">{error}</p>
+                                        </div>
+                                    )}
+
+                                    {teamData && (
+                                        <React.Fragment>
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Featured Label
+                                                </label>
+                                                <select
+                                                    value={featuredLabelType}
+                                                    onChange={(e) => setFeaturedLabelType(e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 mb-2"
+                                                >
+                                                    <option value="Featured Star">Featured Star</option>
+                                                    <option value="Captain">Captain</option>
+                                                    <option value="Man of the Match">Man of the Match</option>
+                                                    <option value="Custom">Custom...</option>
+                                                </select>
+                                                
+                                                {featuredLabelType === 'Custom' && (
+                                                    <input
+                                                        type="text"
+                                                        value={featuredLabelCustom}
+                                                        onChange={(e) => setFeaturedLabelCustom(e.target.value)}
+                                                        placeholder="Enter custom label"
+                                                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                                    />
+                                                )}
+                                            </div>
+
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Featured Player
+                                                </label>
+                                                <select
+                                                    value={featuredPlayer}
+                                                    onChange={(e) => setFeaturedPlayer(e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                                >
+                                                    <option value="">Select featured player...</option>
+                                                    {teamData.starters.map(player => (
+                                                        <option key={player.name} value={player.name}>
+                                                            {player.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Name Format
+                                                </label>
+                                                <select
+                                                    value={nameFormat}
+                                                    onChange={(e) => setNameFormat(e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                                >
+                                                    <option value="full">Full Name</option>
+                                                    <option value="surname">Surname Only</option>
+                                                    <option value="initial">Initial. Surname</option>
+                                                </select>
+                                            </div>
+                                        </React.Fragment>
+                                    )}
+                                </div>
+
+                                {/* Right Column */}
+                                <div>
+                                    {teamData && (
+                                        <React.Fragment>
+                                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Kick-off Time
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={metadata.kickoff}
+                                                        onChange={(e) => {
+                                                            const ko = e.target.value;
+                                                            let updates = {kickoff: ko};
+                                                            // Auto-calculate meet time if empty
+                                                            if (!metadata.meet_time && ko.match(/^\d{1,2}:\d{2}$/)) {
+                                                                const [hours, mins] = ko.split(':').map(Number);
+                                                                const meetHours = hours - 1;
+                                                                if (meetHours >= 0) {
+                                                                    updates.meet_time = `${meetHours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+                                                                }
+                                                            }
+                                                            setMetadata({...metadata, ...updates});
+                                                        }}
+                                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                                        placeholder="15:00"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Meet Time
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={metadata.meet_time}
+                                                        onChange={(e) => setMetadata({...metadata, meet_time: e.target.value})}
+                                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                                        placeholder="13:30"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Location
+                                                </label>
+                                                <select
+                                                    value={metadata.location}
+                                                    onChange={(e) => setMetadata({...metadata, location: e.target.value})}
+                                                    className="w-full p-2 border border-gray-300 rounded-md"
+                                                >
+                                                    <option value="">Select location...</option>
+                                                    <option value="Sandbach RUFC, Bradwall Road, Sandbach. CW11 1RA">Sandbach RUFC (Home)</option>
+                                                    <option value="Custom">Custom...</option>
+                                                </select>
+                                                {metadata.location === 'Custom' && (
+                                                    <input
+                                                        type="text"
+                                                        value={metadata.custom_location || ''}
+                                                        onChange={(e) => setMetadata({...metadata, custom_location: e.target.value})}
+                                                        className="w-full p-2 border border-gray-300 rounded-md mt-2"
+                                                        placeholder="Enter custom location"
+                                                    />
+                                                )}
+                                            </div>
+
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Custom Title
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={metadata.custom_title}
+                                                    onChange={(e) => setMetadata({...metadata, custom_title: e.target.value})}
+                                                    className="w-full p-2 border border-gray-300 rounded-md"
+                                                    placeholder="Match Title"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Match Date
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        value={metadata.match_date}
+                                                        onChange={(e) => setMetadata({...metadata, match_date: e.target.value})}
+                                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Kit / Post-Match
+                                                    </label>
+                                                    <select
+                                                        value={kitText}
+                                                        onChange={(e) => setKitText(e.target.value)}
+                                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                                    >
+                                                        <option value="Number 1s">Number 1's post match</option>
+                                                        <option value="Polos">Polos and Chinos post match</option>
+                                                        <option value="Custom">Custom...</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {kitText === 'Custom' && (
+                                                <div className="mb-4">
+                                                    <input
+                                                        type="text"
+                                                        value={kitTextCustom}
+                                                        onChange={(e) => setKitTextCustom(e.target.value)}
+                                                        placeholder="Enter custom kit/post-match info"
+                                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            <button
+                                                onClick={exportImage}
+                                                disabled={!isFormValid()}
+                                                className={`w-full py-2 px-4 rounded-md transition-colors ${isFormValid() ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-200 cursor-not-allowed'}`}
+                                            >
+                                                Export as PNG
+                                            </button>
+                                        </React.Fragment>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Preview Panel - Full Width */}
+                        <div className="bg-white rounded-lg shadow-md p-6">
+                            <h2 className="text-xl font-semibold mb-4">Preview</h2>
+                            {loading ? (
+                                <div className="flex items-center justify-center h-96">
+                                    <div className="text-gray-500">Loading team data...</div>
+                                </div>
+                            ) : teamData ? (
+                                <div className="flex justify-center overflow-auto bg-gray-50 p-4 border border-gray-200">
+                                    <div id="capture-area" style={captureStyle}>
+                                        <TeamSheetSVG 
+                                            data={teamData} 
+                                            featuredPlayer={featuredPlayer}
+                                            featuredImage={featuredImage}
+                                            metadata={metadata}
+                                            fixtureName={selectedWorksheet}
+                                            featuredLabelType={featuredLabelType}
+                                            featuredLabelCustom={featuredLabelCustom}
+                                            parseOpponent={parseOpponent}
+                                            nameFormat={nameFormat}
+                                            kitText={kitText}
+                                            kitTextCustom={kitTextCustom}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-center h-96">
+                                    <div className="text-gray-500">Select a match to preview</div>
+                                </div>
+                            )}
+                        </div>
+                </div>
+            );
+        }
+
+        const POSITIONS = [
+            { id: 1, label: '1', role: 'Loosehead Prop', cx: 30, cy: 18 },
+            { id: 2, label: '2', role: 'Hooker', cx: 50, cy: 18 },
+            { id: 3, label: '3', role: 'Tighthead Prop', cx: 70, cy: 18 },
+            { id: 4, label: '4', role: '2nd Row', cx: 40, cy: 30 },
+            { id: 5, label: '5', role: '2nd Row', cx: 60, cy: 30 },
+            { id: 6, label: '6', role: 'Blindside Flanker', cx: 25, cy: 40 },
+            { id: 7, label: '7', role: 'Openside Flanker', cx: 75, cy: 40 },
+            { id: 8, label: '8', role: 'Number 8', cx: 50, cy: 45 },
+            { id: 9, label: '9', role: 'Scrum Half', cx: 35, cy: 58 },
+            { id: 10, label: '10', role: 'Fly Half', cx: 55, cy: 65 },
+            { id: 11, label: '11', role: 'Left Wing', cx: 15, cy: 72 },
+            { id: 12, label: '12', role: 'Inside Centre', cx: 40, cy: 75 },
+            { id: 13, label: '13', role: 'Outside Centre', cx: 65, cy: 78 },
+            { id: 14, label: '14', role: 'Right Wing', cx: 90, cy: 81 },
+            { id: 15, label: '15', role: 'Full Back', cx: 50, cy: 92 }
+        ];
+
+        function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, fixtureName, featuredLabelType, featuredLabelCustom, parseOpponent, nameFormat, kitText, kitTextCustom }) {
+            // Helper to format player name based on format option
+            const formatName = (name, isCaptain = false) => {
+                if (!name) return 'TBA';
+                const parts = name.split(' ');
+                let formatted;
+                if (nameFormat === 'surname' && parts.length > 1) {
+                    formatted = parts.slice(1).join(' ');
+                } else if (nameFormat === 'initial' && parts.length > 1) {
+                    formatted = parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
+                } else {
+                    formatted = name;
+                }
+                return formatted.toUpperCase() + (isCaptain ? ' (C)' : '');
+            };
+
+            // Style for match instructions text
+            const matchInstructionsStyle = {
+                color: '#FFD700',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                textAlign: 'center',
+                wordWrap: 'break-word',
+                lineHeight: '1.3'
+            };
+            const starters = data.starters || [];
+            const finishers = data.finishers || [];
+            const featuredName = featuredPlayer || (starters[9] ? starters[9].name : '') || 'The Team';
+            
+            const featuredNameStyle = {
+                width: '100%',
+                height: '100%',
+                color: 'white',
+                fontSize: '32px',
+                fontWeight: '900',
+                lineHeight: '1.0',
+                textTransform: 'uppercase',
+                overflowWrap: 'break-word',
+                display: 'flex',
+                alignItems: 'flex-start',
+                paddingRight: '10px',
+                fontFamily: 'sans-serif'
+            };
+
+            const finalLabel = (featuredLabelType === 'Custom' ? featuredLabelCustom : featuredLabelType) || 'FEATURED STAR';
+
+            return (
+                // Taller viewbox for extended pitch (1250px)
+                <svg id="team-sheet-svg" className="team-sheet-svg" viewBox="0 0 1000 1250">
+                    <defs>
+                        <linearGradient id="pitchGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#064e3b" />
+                            <stop offset="100%" stopColor="#022c22" />
+                        </linearGradient>
+
+                        <pattern id="grassTexture" width="40" height="40" patternUnits="userSpaceOnUse">
+                            <rect width="40" height="40" fill="transparent" />
+                            <line x1="0" y1="0" x2="40" y2="0" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
+                        </pattern>
+
+                        <clipPath id="avatarCircle">
+                            <circle cx="0" cy="0" r="28" />
+                        </clipPath>
+                        
+                        <clipPath id="featuredAvatarClip">
+                            <circle cx="60" cy="60" r="60" />
+                        </clipPath>
+
+                        <symbol id="silhouette" viewBox="-30 -30 60 60">
+                          <circle cx="0" cy="-6" r="10" fill="rgba(255,255,255,0.15)" />
+                          <path d="M-22,24 C-22,12 -12,8 0,8 C12,8 22,12 22,24 L-22,24 Z" fill="rgba(255,255,255,0.15)" />
+                        </symbol>
+
+                        <linearGradient id="headerOverlay" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="rgba(0,0,0,0.5)" />
+                            <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+                        </linearGradient>
+                    </defs>
+
+                    {/* Background fill for whole card */}
+                    <rect width="1000" height="1250" fill="#022c22" />
+
+                    {/* Pitch Background - Left Side - Extended Height */}
+                    <rect width="750" height="1250" fill="url(#pitchGrad)" />
+                    <rect width="750" height="1250" fill="url(#grassTexture)" />
+
+                    {/* Field Markings - Scaled to fit 750px width and Extended Height */}
+                    <g stroke="rgba(255,255,255,0.25)" strokeWidth="2" fill="none">
+                        {/* Perimeter */}
+                        <rect x="20" y="20" width="710" height="1210" strokeWidth="1" opacity="0.3" />
+
+                        {/* Dead Ball Lines */}
+                        <line x1="20" y1="80" x2="730" y2="80" strokeWidth="1" />
+                        <line x1="20" y1="1170" x2="730" y2="1170" strokeWidth="1" />
+
+                        {/* Try Lines */}
+                        <line x1="20" y1="140" x2="730" y2="140" strokeWidth="3" />
+                        <line x1="20" y1="1110" x2="730" y2="1110" strokeWidth="3" />
+
+                        {/* 22m Lines */}
+                        <line x1="20" y1="280" x2="730" y2="280" />
+                        <line x1="20" y1="970" x2="730" y2="970" />
+
+                        {/* 10m Lines (dashed) */}
+                        <line x1="20" y1="360" x2="730" y2="360" strokeDasharray="10,10" />
+                        <line x1="20" y1="890" x2="730" y2="890" strokeDasharray="10,10" />
+
+                        {/* Halfway Line */}
+                        <line x1="20" y1="625" x2="730" y2="625" strokeWidth="3" />
+
+                        {/* 5m & 15m vertical markers based on 750 width */}
+                        <g strokeDasharray="5,15" opacity="0.5">
+                            <line x1="100" y1="140" x2="100" y2="1110" />
+                            <line x1="220" y1="140" x2="220" y2="1110" />
+                            <line x1="530" y1="140" x2="530" y2="1110" />
+                            <line x1="650" y1="140" x2="650" y2="1110" />
+                        </g>
+
+                        {/* Center dashes */}
+                        <line x1="355" y1="190" x2="395" y2="190" />
+                        <line x1="355" y1="1060" x2="395" y2="1060" />
+                    </g>
+
+                    {/* Header Block - Full Width, Top Aligned */}
+                    <rect width="1000" height="150" fill="#022c22" />
+                    {/* Dark gradient overlay for header */}
+                    <rect width="1000" height="150" fill="url(#headerOverlay)" />
+                    <text x="40" y="45" fill="#FFD700" fontSize="14" fontWeight="800" letterSpacing="3">
+                        {(metadata.custom_title || 'Match Day').toUpperCase()}
+                    </text>
+                    <text x="40" y="95" fontSize="52" fontWeight="900">
+                        <tspan fill="#EE0000">Vs </tspan>
+                        <tspan fill="white">{fixtureName ? parseOpponent(fixtureName).toUpperCase() : 'TEAM SHEET'}</tspan>
+                    </text>
+
+                    <g transform="translate(40, 125)">
+                        <rect width="720" height="1" fill="rgba(255,255,255,0.2)" y="-15" />
+                        {/* Date and Timing Row */}
+                        <text x="0" y="10" fill="white" fontSize="12" fontWeight="bold">
+                            {metadata.match_date ? new Date(metadata.match_date).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'}).toUpperCase() : ''}
+                        </text>
+                        <text x="150" y="10" fill="white" fontSize="12" fillOpacity="0.9">
+                            KO: {metadata.kickoff || 'TBC'}  |  MEET: {metadata.meet_time || 'TBC'}
+                        </text>
+                        {/* Location with icon */}
+                        <g transform="translate(350, 0)">
+                            <path d="M6 0C2.7 0 0 2.7 0 6c0 4.5 6 10 6 10s6-5.5 6-10c0-3.3-2.7-6-6-6zm0 8.5c-1.4 0-2.5-1.1-2.5-2.5S4.6 3.5 6 3.5s2.5 1.1 2.5 2.5S7.4 8.5 6 8.5z" fill="#10b981" transform="translate(0, 0) scale(1.2)"/>
+                            <text x="18" y="10" fill="white" fontSize="12" fillOpacity="0.9">
+                                {(metadata.location === 'Custom' ? (metadata.custom_location || 'TBC') : (metadata.location || 'TBC')).toUpperCase()}
+                            </text>
+                        </g>
+                    </g>
+
+
+                    {/* Team Layout - Shifted to center on narrower pitch */}
+                    <g transform="translate(-25, 100)">
+                        {POSITIONS.map((pos, idx) => {
+                            const starter = starters[idx];
+                            const playerName = starter ? starter.name : 'TBA';
+                            const isFeatured = featuredPlayer && starter && starter.name === featuredPlayer;
+                            
+                            const tx = pos.cx * 7.5; 
+                            // Scaled vertical position for taller pitch
+                            // Original cy was optimized for 800px height. layout ~0-100?
+                            // Try scaling cy by 10.5 to spread out more
+                            const ty = pos.cy * 10.5;
+
+                            return (
+                                <g key={pos.id} transform={`translate(${tx}, ${ty})`}>
+                                    {isFeatured && (
+                                        <circle r="38" fill="rgba(16, 185, 129, 0.4)" />
+                                    )}
+
+                                    <circle
+                                        r="32"
+                                        fill={isFeatured ? '#10b981' : 'rgba(15, 23, 42, 0.9)'}
+                                        stroke={isFeatured ? 'white' : 'rgba(255,255,255,0.3)'}
+                                        strokeWidth="2"
+                                    />
+
+                                    <g clipPath="url(#avatarCircle)">
+                                        <rect x="-30" y="-30" width="60" height="60" fill="#0f172a" />
+                                        <use href="#silhouette" x="-30" y="-30" width="60" height="60" />
+                                    </g>
+
+                                    <circle cx="20" cy="-20" r="12" fill="white" stroke="#064e3b" strokeWidth="1" />
+                                    <text x="20" y="-16" textAnchor="middle" fill="#064e3b" fontSize="10" fontWeight="900">
+                                        {pos.label}
+                                    </text>
+
+                                    <g transform="translate(0, 48)">
+                                        <rect
+                                            x="-65"
+                                            y="-16"
+                                            width="130"
+                                            height="32"
+                                            rx="4"
+                                            fill="rgba(0,0,0,0.85)"
+                                            stroke={isFeatured ? '#10b981' : 'none'}
+                                            strokeWidth="1"
+                                        />
+                                        <text
+                                            textAnchor="middle"
+                                            y="0"
+                                            fill="white"
+                                            fontSize="12"
+                                            fontWeight="bold"
+                                        >
+                                            {formatName(playerName, featuredLabelType === 'Captain' && isFeatured)}
+                                        </text>
+                                        <text
+                                            textAnchor="middle"
+                                            y="12"
+                                            fill="white"
+                                            fontSize="8"
+                                            fontWeight="900"
+                                            letterSpacing="1"
+                                        >
+                                            {pos.role.toUpperCase()}
+                                        </text>
+                                    </g>
+                                </g>
+                            );
+                        })}
+                    </g>
+
+                    {/* Finishers / Bench - Sidebar - Shifted Right */}
+                    <g transform="translate(780, 180)">
+                        <rect width="200" height="600" rx="8" fill="rgba(255,255,255,0.05)" />
+                        <rect width="200" height="40" rx="8" fill="#022c22" />
+                        {/* Dark gradient overlay for Finishers header */}
+                        <rect width="200" height="40" rx="8" fill="url(#headerOverlay)" />
+                        <text
+                            x="100"
+                            y="25"
+                            textAnchor="middle"
+                            fill="white"
+                            fontSize="16"
+                            fontWeight="900"
+                            letterSpacing="2"
+                        >
+                            FINISHERS
+                        </text>
+
+                        {finishers.map((player, i) => (
+                            <g key={player.name || i} transform={`translate(20, ${80 + i * 35})`}>
+                                <circle cx="10" cy="-4" r="14" fill="rgba(255,255,255,0.1)" />
+                                <text x="10" y="0" textAnchor="middle" fill="#10b981" fontSize="12" fontWeight="900">
+                                    {i + 16}
+                                </text>
+                                <text x="35" y="0" fill="white" fontSize="13" fontWeight="bold">
+                                    {formatName(player.name || 'PENDING')}
+                                </text>
+                            </g>
+                        ))}
+                    </g>
+
+                    {/* Match Instructions - Below Finishers, Above Featured */}
+                    <foreignObject x="780" y="800" width="200" height="60">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style={matchInstructionsStyle}>
+                            {kitText === 'Custom' ? kitTextCustom : (kitText === 'Number 1s' ? "Number 1's post match" : 'Polos and Chinos post match')}
+                        </div>
+                    </foreignObject>
+
+                    {/* Featured footer - With Avatar - Adjusted for layout */}
+                    <g transform="translate(780, 1050)">
+                        {/* Avatar Image */}
+                        <g transform="translate(40, -140)">
+                             <circle cx="60" cy="60" r="64" fill="#10b981" />
+                             <g clipPath="url(#featuredAvatarClip)">
+                                {featuredImage ? (
+                                    <image 
+                                        href={featuredImage} 
+                                        x="0" y="0" 
+                                        width="120" 
+                                        height="120" 
+                                        preserveAspectRatio="xMidYMid slice"
+                                    />
+                                ) : (
+                                    <use href="#silhouette" x="0" y="0" width="120" height="120" />
+                                )}
+                             </g>
+                        </g>
+
+                        <text x="0" y="40" fill="#FFD700" fontSize="12" fontWeight="900" letterSpacing="3">
+                            {finalLabel.toUpperCase()}
+                        </text>
+                        
+                        <foreignObject x="0" y="50" width="200" height="80">
+                            <div style={featuredNameStyle}>
+                                {featuredName}
+                            </div>
+                        </foreignObject>
+
+                        <line x1="0" y1="135" x2="200" y2="135" stroke="#EE0000" strokeWidth="4" />
+                        <line x1="0" y1="143" x2="200" y2="143" stroke="#FFD700" strokeWidth="4" />
+                    </g>
+
+                    {/* SRUFC Crest - Top Right */}
+                    <image 
+                        href="/static/pitch-assets/SRUFC Crest V2.svg" 
+                        x="820" 
+                        y="15" 
+                        width="130" 
+                        height="130" 
+                        preserveAspectRatio="xMidYMid meet"
+                    />
+                </svg>
+            );
+        }
+
+        ReactDOM.render(<TeamSheetApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>

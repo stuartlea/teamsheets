@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  rugby-sidecar:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./static/players:/app/static/players:ro
+      - ./static/pitch-assets:/app/static/pitch-assets:ro
+    environment:
+      - FLASK_ENV=production
+      - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+    restart: unless-stopped
