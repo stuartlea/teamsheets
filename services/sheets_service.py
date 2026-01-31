@@ -13,8 +13,8 @@ class SheetsService:
         self.sheet_id = os.getenv('GOOGLE_SHEET_ID', '')
         self.sheet = None
         
-        # Try to initialize with OAuth credentials
-        self._initialize_sheet()
+        # Lazy initialization: Do not connect on startup
+        # self._initialize_sheet()
     
     def _initialize_sheet(self):
         """Initialize Google Sheets connection"""
@@ -238,3 +238,20 @@ class SheetsService:
             col_num, remainder = divmod(col_num - 1, 26)
             result = chr(65 + remainder) + result
         return result
+
+    def batch_get_values(self, ranges):
+        """Batch fetch values for multiple ranges"""
+        if not self.is_authenticated():
+            print("Warning: batch_get_values called without auth")
+            return []
+        
+        if not self.sheet:
+            self._initialize_sheet()
+            
+        try:
+            # gspread supports values_batch_get but returns raw response dict
+            # or use service.spreadsheets().values().batchGet
+            return self.sheet.values_batch_get(ranges).get('valueRanges', [])
+        except Exception as e:
+            print(f"Error in batch_get_values: {e}")
+            return []

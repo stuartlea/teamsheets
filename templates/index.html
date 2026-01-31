@@ -54,6 +54,30 @@
                 return match ? match[1].trim() : fixtureName;
             };
 
+            const formatDbDate = (dateStr) => {
+                if (!dateStr) return '';
+                const d = new Date(dateStr);
+                const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                
+                const dayName = days[d.getDay()];
+                const dayNum = d.getDate();
+                const month = months[d.getMonth()];
+                const year = d.getFullYear();
+                
+                const ordinal = (n) => {
+                    if (n > 3 && n < 21) return 'th';
+                    switch (n % 10) {
+                        case 1:  return "st";
+                        case 2:  return "nd";
+                        case 3:  return "rd";
+                        default: return "th";
+                    }
+                };
+                
+                return `${dayName} ${dayNum}${ordinal(dayNum)} ${month} ${year}`;
+            };
+
             // Form validation - all required fields must be filled
             const isFormValid = () => {
                 if (!featuredPlayer) return false;
@@ -63,9 +87,103 @@
                 if (metadata.location === 'Custom' && !metadata.custom_location) return false;
                 if (!metadata.custom_title) return false;
                 if (!metadata.match_date) return false;
+                if (metadata.location === 'Custom' && !metadata.custom_location) return false;
+                if (!metadata.custom_title) return false;
+                if (!metadata.match_date) return false;
                 if (kitText === 'Custom' && !kitTextCustom) return false;
                 return true;
             };
+            const [view, setView] = useState('generator'); // 'generator' or 'database'
+            const [dbTab, setDbTab] = useState('matches'); // 'matches' or 'players'
+            const [dbData, setDbData] = useState({matches: [], players: []});
+
+            const [editingMatch, setEditingMatch] = useState(null);
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editFormData, setEditFormData] = useState({
+                kickoff: '',
+                meet_time: '',
+                location: '',
+                is_cancelled: false
+            });
+
+            const handleEditClick = (match) => {
+                setEditingMatch(match);
+                setEditFormData({
+                    kickoff: match.kickoff || '',
+                    meet_time: match.meet_time || '',
+                    location: match.location || '',
+                    is_cancelled: match.is_cancelled || false
+                });
+                setShowEditModal(true);
+            };
+
+            const handleKickoffChange = (e) => {
+                const newKickoff = e.target.value;
+                setEditFormData(prev => {
+                    const newState = {...prev, kickoff: newKickoff};
+                    
+                    // Auto-calc meet time if empty (and valid HH:MM format)
+                    if (!prev.meet_time && newKickoff.match(/^\d{1,2}:\d{2}$/)) {
+                        const parts = newKickoff.split(':');
+                        let h = parseInt(parts[0]);
+                        const m = parts[1];
+                        let meetH = h - 1;
+                        // Simple 1 hour subtraction
+                        const meetTime = `${meetH.toString().padStart(2, '0')}:${m}`;
+                        newState.meet_time = meetTime;
+                    }
+                    return newState;
+                });
+            };
+
+            const handleSaveMatch = async () => {
+                if (!editingMatch) return;
+                
+                try {
+                    const response = await fetch(`/api/db/match/${editingMatch.id}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(editFormData)
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        setShowEditModal(false);
+                        fetchDbData(); // Refresh list
+                    } else {
+                        alert('Error saving: ' + data.error);
+                    }
+                } catch (e) {
+                    alert('Error saving: ' + e);
+                }
+            };
+            
+            const fetchDbData = async () => {
+                setLoading(true);
+                try {
+                    const [matchesRes, playersRes] = await Promise.all([
+                        fetch('/api/db/matches'),
+                        fetch('/api/db/players')
+                    ]);
+                    const matches = await matchesRes.json();
+                    const players = await playersRes.json();
+                    setDbData({
+                        matches: matches.matches || [],
+                        players: players.players || []
+                    });
+                } catch (e) {
+                    console.error("DB Fetch Error", e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Effect to load DB data when switching to database view
+            useEffect(() => {
+                if (view === 'database') {
+                    fetchDbData();
+                }
+            }, [view]);
+
             const [isAuthenticated, setIsAuthenticated] = useState(false);
 
             useEffect(() => {
@@ -73,25 +191,102 @@
                 fetchWorksheets();
             }, []);
 
+            const [playerImages, setPlayerImages] = useState({});
+
+            // Effect to load all team images when starters change
             useEffect(() => {
+                let isMounted = true;
+                const loadTeamImages = async () => {
+                   if (!dbData.matches || !dbData.matches.length) return;
+                    
+                   // Get current team players (starters)
+                   // We need to parse the current worksheet or use the data passed to TeamSheetSVG
+                   // Actually, we can just use the 'starters' from the active view logic.
+                   // But 'starters' isn't in scope here. It's derived in the render or passed to SVG.
+                   // Let's rely on the fact that when we select a worksheet, we fetch its data.
+                   // Wait, the main app doesn't perform the fetch, 'TeamSheetSVG' receives 'data'.
+                   // We need to trigger this fetch when 'selectedWorksheet' changes.
+                };
+            }, [selectedWorksheet]);
+
+            // Actually, we have 'dbData' but for the preview we use 'loadFeaturedImage' approach
+            // Let's look at how data is loaded. 
+            // Ah, line 100-200 area:
+            // const [selectedWorksheet, setSelectedWorksheet] = useState('');
+            // const [teamData, setTeamData] = useState(null);
+            
+            // We should hook into 'teamData'.
+            
+            useEffect(() => {
+                let isMounted = true;
+                
+                const fetchPlayerImage = async (playerName) => {
+                    try {
+                        const response = await fetch(`/api/player-image/${encodeURIComponent(playerName)}`);
+                        const data = await response.json();
+                        if (data.success && data.image_url) {
+                            return data.image_url;
+                        }
+                    } catch (e) {
+                        return null;
+                    }
+                    return null;
+                };
+
+                const loadAllImages = async () => {
+                    if (!teamData || !teamData.starters) return;
+                    
+                    const newImages = {};
+                    const promises = teamData.starters.map(async (player) => {
+                        if (player && player.name) {
+                            const url = await fetchPlayerImage(player.name);
+                            // Ignore the backend's fallback silhouette PNG so we use the SVG symbol instead
+                            if (url && !url.includes('player-silhouette.png')) {
+                                newImages[player.name] = url;
+                            }
+                        }
+                    });
+
+                    await Promise.all(promises);
+                    if (isMounted) {
+                        setPlayerImages(prev => ({...prev, ...newImages}));
+                    }
+                };
+                
+                loadAllImages();
+                
+                return () => { isMounted = false; };
+            }, [teamData]);
+
+            useEffect(() => {
+                let isMounted = true;
+
                 const loadFeaturedImage = async () => {
                     if (!featuredPlayer) {
-                        setFeaturedImage(null);
+                        if (isMounted) setFeaturedImage(null);
                         return;
                     }
 
                     try {
                         const response = await fetch(`/api/player-image/${featuredPlayer}`);
                         const data = await response.json();
+                        
+                        if (!isMounted) return;
+
                         if (data.success && data.image_url) {
                             // Fetch the actual image to convert to data URL
                             const imgResponse = await fetch(data.image_url);
                             
+                            if (!isMounted) return;
+
                             if (!imgResponse.ok) {
                                 throw new Error('Image fetch failed');
                             }
 
                             const blob = await imgResponse.blob();
+                            
+                             if (!isMounted) return;
+
                             // Reject SVGs (likely placeholders) and non-images
                             if (!blob.type.startsWith('image/') || blob.type.includes('svg')) {
                                 throw new Error('Invalid image type');
@@ -99,6 +294,7 @@
 
                             const reader = new FileReader();
                             reader.onloadend = () => {
+                                if (!isMounted) return;
                                 const dataUrl = reader.result;
                                 // Reject fake PNGs (SVG/text disguised as PNG)
                                 try {
@@ -118,15 +314,19 @@
                             };
                             reader.readAsDataURL(blob);
                         } else {
-                            setFeaturedImage(null);
+                            if (isMounted) setFeaturedImage(null);
                         }
                     } catch (error) {
                         console.error('Error loading featured image:', error);
-                        setFeaturedImage(null);
+                        if (isMounted) setFeaturedImage(null);
                     }
                 };
 
                 loadFeaturedImage();
+
+                return () => {
+                    isMounted = false;
+                };
             }, [featuredPlayer]);
 
             const checkAuthStatus = async () => {
@@ -140,14 +340,19 @@
             };
 
             const fetchWorksheets = async () => {
+                setLoading(true);
                 try {
-                    const response = await fetch('/api/worksheets');
+                    const response = await fetch('/api/db/matches');
                     const data = await response.json();
                     if (data.success) {
-                        setWorksheets(data.worksheets);
+                        setWorksheets(data.matches);
+                    } else {
+                        console.error('Failed to fetch fixtures from database');
                     }
                 } catch (error) {
                     console.error('Error fetching worksheets:', error);
+                } finally {
+                    setLoading(false);
                 }
             };
 
@@ -159,14 +364,61 @@
                 window.location.href = '/auth/logout';
             };
 
-            const fetchTeamData = async (worksheetName) => {
+            const handleSync = async () => {
+                const btn = document.getElementById('sync-btn');
+                const origText = btn.innerText;
+                btn.innerText = 'Syncing...';
+                btn.disabled = true;
+                
+                try {
+                    const response = await fetch('/api/sync');
+                    const data = await response.json();
+                    if (data.success) {
+                        alert('Database Synchronized Successfully!');
+                    } else {
+                        alert('Sync Failed: ' + data.error);
+                    }
+                } catch (e) {
+                    alert('Sync Error: ' + e);
+                } finally {
+                    btn.innerText = origText;
+                    btn.disabled = false;
+                }
+            };
+
+            const refreshTeamData = async () => {
+                if (!selectedWorksheet) return;
+                
                 setLoading(true);
                 setError('');
-                setTeamData(null);
+                try {
+                    const response = await fetch(`/api/db/match/${selectedWorksheet}/refresh`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        // Re-fetch data
+                        await fetchTeamData(selectedWorksheet);
+                    } else {
+                        setError(data.error || 'Refresh failed');
+                    }
+                } catch (error) {
+                    console.error('Error refreshing team data:', error);
+                    setError('Network error: Failed to refresh');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const fetchTeamData = async (matchId) => {
+                setLoading(true);
+                setError('');
+                // Don't clear team data immediately to avoid flash if refreshing
+                // setTeamData(null); 
                 // Reset featured player to force selection
                 setFeaturedPlayer('');
                 try {
-                    const response = await fetch(`/api/worksheet/${worksheetName}`);
+                    const response = await fetch(`/api/db/match/${matchId}/team`);
                     const data = await response.json();
                     if (data.success) {
                         setTeamData(data);
@@ -195,6 +447,14 @@
                                 setMetadata(prev => ({...prev, match_date: dateStr}));
                             }
                         }
+                        
+                        // Apply DB override metadata (Kickoff, Meet, Location, Cancellation)
+                        if (data.metadata) {
+                            setMetadata(prev => ({
+                                ...prev,
+                                ...data.metadata
+                            }));
+                        }
                     } else {
                         setError(data.error || 'Failed to load team data');
                     }
@@ -207,11 +467,11 @@
             };
 
             const handleWorksheetChange = (e) => {
-                const worksheet = e.target.value;
-                setSelectedWorksheet(worksheet);
+                const matchId = e.target.value;
+                setSelectedWorksheet(matchId);
                 setError(''); // Clear error when changing selection
-                if (worksheet) {
-                    fetchTeamData(worksheet);
+                if (matchId) {
+                    fetchTeamData(matchId);
                 } else {
                     setTeamData(null);
                 }
@@ -256,10 +516,33 @@
             return (
                 <div className="container mx-auto px-4 py-8">
                     <div className="flex justify-between items-center mb-8">
-                        <h1 className="text-3xl font-bold text-gray-800">Rugby Team Sheet Generator</h1>
+                        <div className="flex items-center space-x-6">
+                            <h1 className="text-3xl font-bold text-gray-800">Rugby Team Sheet Generator</h1>
+                            <div className="flex bg-gray-200 rounded-lg p-1">
+                                <button 
+                                    onClick={() => setView('generator')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'generator' ? 'bg-white text-gray-900 shadow' : 'text-gray-600 hover:text-gray-900'}`}
+                                >
+                                    Generator
+                                </button>
+                                <button 
+                                    onClick={() => setView('database')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'database' ? 'bg-white text-gray-900 shadow' : 'text-gray-600 hover:text-gray-900'}`}
+                                >
+                                    Database
+                                </button>
+                            </div>
+                        </div>
                         <div className="flex items-center space-x-4">
                             {isAuthenticated ? (
                                 <div className="flex items-center space-x-2">
+                                    <button
+                                        id="sync-btn"
+                                        onClick={handleSync}
+                                        className="bg-purple-600 text-white px-3 py-1 text-sm rounded-md hover:bg-purple-700 transition-colors mr-2"
+                                    >
+                                        Sync Database
+                                    </button>
                                     <span className="text-green-600 font-medium">✓ Connected</span>
                                     <button
                                         onClick={handleLogout}
@@ -279,35 +562,144 @@
                         </div>
                     </div>
                     
-                    {/* Controls Panel - Full Width, 2 Columns */}
-                        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-                            <h2 className="text-xl font-semibold mb-4">Team Selection</h2>
+                    {/* Main Content Area */}
+                    {view === 'database' ? (
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-8 w-full">
+                            <div className="border-b border-gray-200 mb-6">
+                                <nav className="-mb-px flex space-x-8">
+                                    <button
+                                        onClick={() => setDbTab('matches')}
+                                        className={`pb-4 px-1 border-b-2 font-medium text-sm ${dbTab === 'matches' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                                    >
+                                        Matches
+                                    </button>
+                                    <button
+                                        onClick={() => setDbTab('players')}
+                                        className={`pb-4 px-1 border-b-2 font-medium text-sm ${dbTab === 'players' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                                    >
+                                        Players
+                                    </button>
+                                </nav>
+                            </div>
                             
-                            {!isAuthenticated && (
-                                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                                    <p className="text-yellow-800 text-sm">
-                                        Connect to Google Sheets to access your team data. Using mock data for demonstration.
-                                    </p>
+                            {dbTab === 'matches' && (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fixture</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venue</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kickoff</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {dbData.matches.length > 0 ? (
+                                                dbData.matches.map((match) => (
+                                                    <tr key={match.id} className={match.is_cancelled ? "bg-red-50" : "hover:bg-gray-50"}>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {formatDbDate(match.date)}
+                                                            {match.is_cancelled && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Cancelled</span>}
+                                                        </td>
+                                                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${match.is_cancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{match.name}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{match.home_away}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{match.kickoff}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            <button 
+                                                                onClick={() => handleEditClick(match)}
+                                                                className="text-indigo-600 hover:text-indigo-900"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="5" className="px-6 py-4 text-center text-sm text-gray-500">No matches found. Try syncing the database.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                             )}
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Left Column */}
-                                <div>
-                                    <div className="mb-4">
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Select Fixture
-                                        </label>
-                                        <select
-                                            value={selectedWorksheet}
-                                            onChange={handleWorksheetChange}
-                                            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                                        >
-                                            <option value="">Choose a fixture...</option>
-                                            {worksheets.map(sheet => (
-                                                <option key={sheet} value={sheet}>{sheet}</option>
-                                            ))}
-                                        </select>
+                            {dbTab === 'players' && (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Caps (Selections)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {dbData.players.length > 0 ? (
+                                                dbData.players.map((player) => (
+                                                    <tr key={player.id} className="hover:bg-gray-50">
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{player.name}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{player.caps}</td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="2" className="px-6 py-4 text-center text-sm text-gray-500">No players found. Try syncing the database.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        /* Generator View */
+                        <div>
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+                            <h2 className="text-xl font-semibold mb-4">Team Selection</h2>
+                                
+                                {!isAuthenticated && (
+                                    <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                                        <p className="text-yellow-800 text-sm">
+                                            Connect to Google Sheets to access your team data. Using mock data for demonstration.
+                                        </p>
+                                    </div>
+                                )}
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Left Column */}
+                                    <div>
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Select Fixture
+                                            </label>
+                                        <div className="flex gap-2">
+                                            <select
+                                                value={selectedWorksheet}
+                                                onChange={handleWorksheetChange}
+                                                className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                            >
+                                                <option value="">Choose a fixture...</option>
+                                                {worksheets.map(match => (
+                                                    <option key={match.id} value={match.id}>
+                                                        {match.name} {match.is_cancelled ? '(Cancelled)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                onClick={refreshTeamData}
+                                                disabled={!selectedWorksheet || loading}
+                                                className="bg-blue-100 text-blue-700 p-2 rounded-md hover:bg-blue-200 disabled:opacity-50"
+                                                title="Refresh data from Google Sheet"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M21 2v6h-6"></path>
+                                                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                                                    <path d="M3 22v-6h6"></path>
+                                                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {error && (
@@ -490,12 +882,12 @@
 
                                             {kitText === 'Custom' && (
                                                 <div className="mb-4">
-                                                    <input
-                                                        type="text"
+                                                    <textarea
                                                         value={kitTextCustom}
                                                         onChange={(e) => setKitTextCustom(e.target.value)}
                                                         placeholder="Enter custom kit/post-match info"
                                                         className="w-full p-2 border border-gray-300 rounded-md"
+                                                        rows="3"
                                                     />
                                                 </div>
                                             )}
@@ -535,6 +927,7 @@
                                             nameFormat={nameFormat}
                                             kitText={kitText}
                                             kitTextCustom={kitTextCustom}
+                                            playerImages={playerImages}
                                         />
                                     </div>
                                 </div>
@@ -544,6 +937,37 @@
                                 </div>
                             )}
                         </div>
+                </div>
+                )}
+                {showEditModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white p-6 rounded-lg w-full max-w-md shadow-xl">
+                            <h3 className="text-lg font-bold mb-4 text-gray-900">Edit Match Details</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Kickoff Time</label>
+                                    <input type="text" value={editFormData.kickoff} onChange={handleKickoffChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm p-2 border" placeholder="15:00" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Meet Time</label>
+                                    <input type="text" value={editFormData.meet_time} onChange={e => setEditFormData({...editFormData, meet_time: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm p-2 border" placeholder="13:30" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Location</label>
+                                    <input type="text" value={editFormData.location} onChange={e => setEditFormData({...editFormData, location: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm p-2 border" />
+                                </div>
+                                <div className="flex items-center">
+                                    <input type="checkbox" id="is_cancelled" checked={editFormData.is_cancelled} onChange={e => setEditFormData({...editFormData, is_cancelled: e.target.checked})} className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded" />
+                                    <label htmlFor="is_cancelled" className="ml-2 block text-sm text-gray-900">Match Cancelled</label>
+                                </div>
+                            </div>
+                            <div className="mt-6 flex justify-end space-x-3">
+                                <button onClick={() => setShowEditModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                                <button onClick={handleSaveMatch} className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 </div>
             );
         }
@@ -566,7 +990,7 @@
             { id: 15, label: '15', role: 'Full Back', cx: 50, cy: 92 }
         ];
 
-        function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, fixtureName, featuredLabelType, featuredLabelCustom, parseOpponent, nameFormat, kitText, kitTextCustom }) {
+        function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, fixtureName, featuredLabelType, featuredLabelCustom, parseOpponent, nameFormat, kitText, kitTextCustom, playerImages }) {
             // Helper to format player name based on format option
             const formatName = (name, isCaptain = false) => {
                 if (!name) return 'TBA';
@@ -589,7 +1013,8 @@
                 fontWeight: 'bold',
                 textAlign: 'center',
                 wordWrap: 'break-word',
-                lineHeight: '1.3'
+                lineHeight: '1.3',
+                whiteSpace: 'pre-wrap'
             };
             const starters = data.starters || [];
             const finishers = data.finishers || [];
@@ -727,6 +1152,8 @@
                             const playerName = starter ? starter.name : 'TBA';
                             const isFeatured = featuredPlayer && starter && starter.name === featuredPlayer;
                             
+                            const playerImage = playerName && playerImages ? playerImages[playerName] : null;
+
                             const tx = pos.cx * 7.5; 
                             // Scaled vertical position for taller pitch
                             // Original cy was optimized for 800px height. layout ~0-100?
@@ -748,11 +1175,15 @@
 
                                     <g clipPath="url(#avatarCircle)">
                                         <rect x="-30" y="-30" width="60" height="60" fill="#0f172a" />
-                                        <use href="#silhouette" x="-30" y="-30" width="60" height="60" />
+                                        {playerImage ? (
+                                            <image href={playerImage} x="-30" y="-30" width="60" height="60" preserveAspectRatio="xMidYMid slice" />
+                                        ) : (
+                                            <use href="#silhouette" x="-30" y="-30" width="60" height="60" />
+                                        )}
                                     </g>
 
-                                    <circle cx="20" cy="-20" r="12" fill="white" stroke="#064e3b" strokeWidth="1" />
-                                    <text x="20" y="-16" textAnchor="middle" fill="#064e3b" fontSize="10" fontWeight="900">
+                                    <circle cx="26" cy="-26" r="12" fill="white" stroke="#064e3b" strokeWidth="1" />
+                                    <text x="26" y="-22" textAnchor="middle" fill="#064e3b" fontSize="10" fontWeight="900">
                                         {pos.label}
                                     </text>
 
@@ -810,17 +1241,20 @@
                             FINISHERS
                         </text>
 
-                        {finishers.map((player, i) => (
-                            <g key={player.name || i} transform={`translate(20, ${80 + i * 35})`}>
-                                <circle cx="10" cy="-4" r="14" fill="rgba(255,255,255,0.1)" />
-                                <text x="10" y="0" textAnchor="middle" fill="#10b981" fontSize="12" fontWeight="900">
-                                    {i + 16}
-                                </text>
-                                <text x="35" y="0" fill="white" fontSize="13" fontWeight="bold">
-                                    {formatName(player.name || 'PENDING')}
-                                </text>
-                            </g>
-                        ))}
+                        {finishers.map((player, i) => {
+                            if (!player.name) return null; // Hide empty slots
+                            return (
+                                <g key={player.name || i} transform={`translate(20, ${80 + i * 35})`}>
+                                    <circle cx="10" cy="-4" r="14" fill="rgba(255,255,255,0.1)" />
+                                    <text x="10" y="0" textAnchor="middle" fill="#10b981" fontSize="12" fontWeight="900">
+                                        {i + 16}
+                                    </text>
+                                    <text x="35" y="0" fill="white" fontSize="13" fontWeight="bold">
+                                        {formatName(player.name)}
+                                    </text>
+                                </g>
+                            );
+                        })}
                     </g>
 
                     {/* Match Instructions - Below Finishers, Above Featured */}
@@ -831,7 +1265,7 @@
                     </foreignObject>
 
                     {/* Featured footer - With Avatar - Adjusted for layout */}
-                    <g transform="translate(780, 1050)">
+                    <g transform="translate(780, 1065)">
                         {/* Avatar Image */}
                         <g transform="translate(40, -140)">
                              <circle cx="60" cy="60" r="64" fill="#10b981" />
@@ -854,14 +1288,14 @@
                             {finalLabel.toUpperCase()}
                         </text>
                         
-                        <foreignObject x="0" y="50" width="200" height="80">
+                        <foreignObject x="0" y="50" width="200" height="110">
                             <div style={featuredNameStyle}>
                                 {featuredName}
                             </div>
                         </foreignObject>
 
-                        <line x1="0" y1="135" x2="200" y2="135" stroke="#EE0000" strokeWidth="4" />
-                        <line x1="0" y1="143" x2="200" y2="143" stroke="#FFD700" strokeWidth="4" />
+                        <line x1="0" y1="165" x2="200" y2="165" stroke="#EE0000" strokeWidth="4" />
+                        <line x1="0" y1="173" x2="200" y2="173" stroke="#FFD700" strokeWidth="4" />
                     </g>
 
                     {/* SRUFC Crest - Top Right */}

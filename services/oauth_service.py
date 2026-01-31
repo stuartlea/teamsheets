@@ -9,7 +9,7 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 import gspread
-from flask import session
+from flask import session, has_request_context
 
 class OAuthService:
     def __init__(self):
@@ -42,7 +42,7 @@ class OAuthService:
     def get_credentials(self):
         """Get credentials from session or token file"""
         # Check session first (for web app)
-        if 'credentials' in session:
+        if has_request_context() and 'credentials' in session:
             credentials_data = json.loads(session['credentials'])
             return Credentials.from_authorized_user_info(credentials_data, self.scopes)
         
@@ -51,14 +51,20 @@ class OAuthService:
             credentials = Credentials.from_authorized_user_file(self.token_file, self.scopes)
             if credentials.valid:
                 # Store in session for web use
-                session['credentials'] = credentials.to_json()
+                if has_request_context():
+                    session['credentials'] = credentials.to_json()
                 return credentials
             elif credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
-                with open(self.token_file, 'w') as token:
-                    token.write(credentials.to_json())
-                session['credentials'] = credentials.to_json()
-                return credentials
+                try:
+                    credentials.refresh(Request())
+                    with open(self.token_file, 'w') as token:
+                        token.write(credentials.to_json())
+                    if has_request_context():
+                        session['credentials'] = credentials.to_json()
+                    return credentials
+                except Exception as e:
+                    print(f"Error refreshing credentials: {e}")
+                    return None
         
         return None
     
@@ -79,7 +85,7 @@ class OAuthService:
     
     def revoke_credentials(self):
         """Revoke stored credentials"""
-        if 'credentials' in session:
+        if has_request_context() and 'credentials' in session:
             del session['credentials']
         
         if os.path.exists(self.token_file):
