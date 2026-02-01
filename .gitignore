@@ -56,3 +56,6 @@ static/players/*.jpeg
 
 # Node modules (if we add frontend build process)
 node_modules/
+
+# Data
+instance/teamsheets.db

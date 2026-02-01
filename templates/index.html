@@ -6,7 +6,7 @@
     <title>Rugby Team Sheet Sidecar</title>
     <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html-to-image@1.11.11/dist/html-to-image.js"></script>
     <script src="https://unpkg.com/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
@@ -24,6 +24,164 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
+
+        const TeamPlanTable = ({ periods, templateType }) => {
+            if (!periods || Object.keys(periods).length <= 1) return null;
+
+            // Sort periods by key (1, 2, 3...)
+            const sortedPeriods = Object.keys(periods).sort((a,b) => parseInt(a) - parseInt(b)).map(k => parseInt(k));
+            
+            // Helper to get player at period/position
+            const getPlayer = (periodNum, pos, isStarter) => {
+                const pData = periods[periodNum];
+                if (!pData) return null;
+                const list = isStarter ? pData.starters : pData.finishers;
+                // Starters index = pos-1. Finishers index = pos-16
+                const idx = isStarter ? pos - 1 : pos - 16;
+                if (!list || idx < 0 || idx >= list.length) return null;
+                return list[idx];
+            };
+
+            // Badge/Color Logic for POS column
+            const getPosColor = (periodNum, player, pos, isStarter) => {
+                // Default: White/Transparent
+                if (periodNum === 1) return ''; 
+                if (!player || !player.name) return '';
+
+                const prevPeriod = periods[periodNum - 1];
+                if (!prevPeriod) return '';
+
+                let wasStarterPrev = false;
+                let prevPos = -1;
+
+                prevPeriod.starters.forEach((s, i) => {
+                    if (s.name === player.name) {
+                        wasStarterPrev = true;
+                        prevPos = i + 1;
+                    }
+                });
+
+                // ON: Was not a starter previously, now is a starter
+                if (isStarter && !wasStarterPrev) return 'bg-green-500 text-white';
+
+                // SW: Was a starter previously, but at different position
+                if (isStarter && wasStarterPrev && prevPos !== pos) return 'bg-yellow-500 text-white';
+
+                // OFF: Is now valid Finisher (Bench), but was Starter previously
+                if (!isStarter && wasStarterPrev) return 'bg-red-500 text-white';
+
+                return '';
+            };
+
+            // Period Headers
+            let periodLabels = [];
+            if (templateType && templateType.includes('Thirds')) periodLabels = ['1st Third', '2nd Third', '3rd Third'];
+            else if (templateType && templateType.includes('Quarters')) periodLabels = ['1st Quarter', '2nd Quarter', '3rd Quarter', '4th Quarter'];
+            else if (templateType && templateType.includes('Halves')) periodLabels = ['1st Half', '2nd Half'];
+            else periodLabels = sortedPeriods.map(p => `Period ${p}`);
+
+            // Dynamic Row Logic for Finishers
+            // Check positions 16 up to 30 to see if they are used in ANY period
+            const maxCheck = 30;
+            const activeSubPositions = [];
+            for (let i = 16; i <= maxCheck; i++) {
+                const isUsed = sortedPeriods.some(p => {
+                    const player = getPlayer(p, i, false);
+                    return player && player.name;
+                });
+                if (isUsed) activeSubPositions.push(i);
+            }
+            // If no subs found at all, maybe show at least 16-20? 
+            // The user said "Id rather not see empty rows", so strict filtering is best. 
+            // But if ALL are empty, show nothing or just the header? 
+            // Let's assume strict filtering.
+
+            return (
+                <div className="mt-8 mb-12 overflow-x-auto w-auto max-w-[1200px] mx-auto bg-white p-6 rounded-lg shadow">
+                    <table className="min-w-full border-collapse border border-gray-400 text-sm">
+                        <thead>
+                            <tr className="bg-blue-800 text-white">
+                                {/* Removed first Pos col */}
+                                {sortedPeriods.map((p, i) => (
+                                    <React.Fragment key={p}>
+                                        <th className={`border border-gray-400 p-2 text-center w-10 font-bold bg-blue-700 ${i === 0 || i > 0 ? 'border-l-4 border-l-gray-600' : ''}`}>Pos</th>
+                                        <th className="border border-gray-400 p-2 text-left font-bold">
+                                            {periodLabels[i] || `Period ${p}`}
+                                        </th>
+                                    </React.Fragment>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {/* Starters 1-15 */}
+                            {Array.from({length: 15}, (_, i) => i + 1).map(pos => (
+                                <tr key={pos} className={pos % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+                                    {/* Removed first Pos col */}
+                                    {sortedPeriods.map((p, i) => {
+                                        const player = getPlayer(p, pos, true);
+                                        const colorClass = getPosColor(p, player, pos, true);
+                                        const isFirstCol = true; // Apply thick border to every period start?
+                                        
+                                        return (
+                                            <React.Fragment key={p}>
+                                                <td className={`border border-gray-400 p-1 text-center font-bold text-xs ${colorClass} border-l-4 border-l-gray-600`}>
+                                                    {pos}
+                                                </td>
+                                                <td className="border border-gray-400 p-1 px-3 h-8 text-gray-800 font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[140px]">
+                                                    {player ? player.name : ''}
+                                                </td>
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                            
+                            {/* Divider Row for Bench */}
+                             <tr className="bg-orange-100 border-t-2 border-gray-800">
+                                {sortedPeriods.map((p, i) => (
+                                    <React.Fragment key={p}>
+                                        <td className="border border-gray-400 bg-orange-200 text-center font-bold text-xs border-l-4 border-l-gray-600">Sub</td>
+                                        <td className="border border-gray-400 bg-orange-100"></td>
+                                    </React.Fragment>
+                                ))}
+                            </tr>
+
+                            {/* Finishers Rows (Dynamic) */}
+                            {activeSubPositions.map(pos => (
+                                <tr key={pos} className="bg-yellow-50">
+                                    {sortedPeriods.map((p, i) => {
+                                        const player = getPlayer(p, pos, false);
+                                        const colorClass = getPosColor(p, player, pos, false);
+                                        
+                                         // If name is empty in THIS period, show empty cells
+                                         // But we know this ROW is active because some period has a name
+                                        if (!player || !player.name) {
+                                             return (
+                                                <React.Fragment key={p}>
+                                                    <td className="border border-gray-400 bg-gray-50 border-l-4 border-l-gray-600"></td>
+                                                    <td className="border border-gray-400 bg-gray-50"></td>
+                                                </React.Fragment>
+                                            );
+                                        }
+                                        
+                                        return (
+                                            <React.Fragment key={p}>
+                                                <td className={`border border-gray-400 p-1 text-center font-bold text-xs ${colorClass} border-l-4 border-l-gray-600`}>
+                                                    {pos}
+                                                </td>
+                                                <td className="border border-gray-400 p-1 px-3 h-8 text-gray-800 font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[140px]">
+                                                    {player.name}
+                                                </td>
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
 
         function TeamSheetApp() {
             const [worksheets, setWorksheets] = useState([]);
@@ -94,6 +252,7 @@
                 return true;
             };
             const [view, setView] = useState('generator'); // 'generator' or 'database'
+            const [previewTab, setPreviewTab] = useState('sheet'); // 'sheet' or 'plan'
             const [dbTab, setDbTab] = useState('matches'); // 'matches' or 'players'
             const [dbData, setDbData] = useState({matches: [], players: []});
 
@@ -907,30 +1066,57 @@
 
                         {/* Preview Panel - Full Width */}
                         <div className="bg-white rounded-lg shadow-md p-6">
-                            <h2 className="text-xl font-semibold mb-4">Preview</h2>
+                            <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                <h2 className="text-xl font-semibold">Preview</h2>
+                                {/* Tab Switcher */}
+                                {teamData && (
+                                    <div className="flex space-x-1 bg-gray-100 p-1 rounded-md">
+                                        <button 
+                                            onClick={() => setPreviewTab('sheet')}
+                                            className={`px-3 py-1 text-sm font-medium rounded ${previewTab === 'sheet' ? 'bg-white text-gray-800 shadow' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Team Sheet
+                                        </button>
+                                        <button 
+                                            onClick={() => setPreviewTab('plan')}
+                                            className={`px-3 py-1 text-sm font-medium rounded ${previewTab === 'plan' ? 'bg-white text-gray-800 shadow' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Team Plan
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
                             {loading ? (
                                 <div className="flex items-center justify-center h-96">
                                     <div className="text-gray-500">Loading team data...</div>
                                 </div>
                             ) : teamData ? (
-                                <div className="flex justify-center overflow-auto bg-gray-50 p-4 border border-gray-200">
-                                    <div id="capture-area" style={captureStyle}>
-                                        <TeamSheetSVG 
-                                            data={teamData} 
-                                            featuredPlayer={featuredPlayer}
-                                            featuredImage={featuredImage}
-                                            metadata={metadata}
-                                            fixtureName={selectedWorksheet}
-                                            featuredLabelType={featuredLabelType}
-                                            featuredLabelCustom={featuredLabelCustom}
-                                            parseOpponent={parseOpponent}
-                                            nameFormat={nameFormat}
-                                            kitText={kitText}
-                                            kitTextCustom={kitTextCustom}
-                                            playerImages={playerImages}
-                                        />
-                                    </div>
-                                </div>
+                                <>
+                                    {previewTab === 'sheet' && (
+                                        <div className="flex justify-center overflow-auto bg-gray-50 p-4 border border-gray-200">
+                                            <div id="capture-area" style={captureStyle}>
+                                                <TeamSheetSVG 
+                                                    data={teamData} 
+                                                    featuredPlayer={featuredPlayer}
+                                                    featuredImage={featuredImage}
+                                                    metadata={metadata}
+                                                    fixtureName={selectedWorksheet}
+                                                    featuredLabelType={featuredLabelType}
+                                                    featuredLabelCustom={featuredLabelCustom}
+                                                    parseOpponent={parseOpponent}
+                                                    nameFormat={nameFormat}
+                                                    kitText={kitText}
+                                                    kitTextCustom={kitTextCustom}
+                                                    playerImages={playerImages}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                    {previewTab === 'plan' && (
+                                        <TeamPlanTable periods={teamData.periods} templateType={teamData.template_type} />
+                                    )}
+                                </>
                             ) : (
                                 <div className="flex items-center justify-center h-96">
                                     <div className="text-gray-500">Select a match to preview</div>
