@@ -1,51 +1,53 @@
 
-from services.sheets_service import SheetsService
-from models import db, Player, Match, Availability, TeamSelection
+from models import db, Player, Match, Availability, TeamSelection, TeamSeason
 from datetime import datetime
 
 class SyncService:
     def __init__(self, sheets_service):
         self.sheets_service = sheets_service
 
-    def sync_master_data(self):
+    def sync_master_data(self, team_season_id):
         """
-        Synchronizes Master Data from 'Selection' tab:
-        1. Players (Row 5 onwards, Col C)
-        2. Matches (Row 1, Cols O:AU)
-        3. Availabilities (Intersection of Player/Match)
+        Synchronizes Master Data from 'Selection' tab for a specific TeamSeason:
+        1. Players (Row 5 onwards, Col C) - Global
+        2. Matches (Row 1, Cols O:AU) - Scoped to TeamSeason
+        3. Availabilities - Scoped to Match
         """
+        # Fetch Context
+        team_season = TeamSeason.query.get(team_season_id)
+        if not team_season:
+            print(f"Sync failed: TeamSeason {team_season_id} not found")
+            return False
+
         if not self.sheets_service.is_authenticated():
             print("Sync failed: Not authenticated with Google Sheets")
             return False
 
         try:
-            # Ensure sheet is initialized
+            # Initialize for specific spreadsheet
+            self.sheets_service._initialize_sheet(team_season.spreadsheet_id)
             if not self.sheets_service.sheet:
-                self.sheets_service._initialize_sheet()
+                 print(f"Could not open sheet for {team_season}")
+                 return False
                 
             # 1. Fetch Selection Worksheet
             ws = self.sheets_service.sheet.worksheet('Selection')
-            print("Fetching Selection tab data...")
+            print(f"Fetching Selection data for {team_season}...")
             
             # Get all data for efficient processing
             all_values = ws.get_all_values()
             
             # --- SYNC MATCHES ---
             print("Syncing Matches...")
-            # Matches are in Row 1 (index 0), Cols O to AU (index 14 to 46)
-            # Row 2 (index 1) has Home/Away
-            # Row 4 (index 3) has Date
             
             fixture_row = all_values[0]
             home_away_row = all_values[1]
-            fixture_row = all_values[0]
-            home_away_row = all_values[1]
-            status_row = all_values[2] # Row 3: Status (e.g. Cancelled)
+            status_row = all_values[2] # Row 3: Status
             date_row = all_values[3]
             
-            matches_map = {} # Map col_index to match object for later use
+            matches_map = {} # Map col_index to match object
             
-            # Columns O (14) to AU (46) - Adjust range as needed
+            # Columns O (14) to AU (46)
             for col_idx in range(14, len(fixture_row)):
                 fixture_name = fixture_row[col_idx]
                 if not fixture_name or not fixture_name.strip():
@@ -60,29 +62,26 @@ class SyncService:
                 match_date = None
                 if date_str:
                     try:
-                        # Assuming DD/MM/YYYY or YYYY-MM-DD
                         if '/' in date_str:
                             day, month, year = map(int, date_str.split('/'))
                             match_date = datetime(year, month, day).date()
                         elif '-' in date_str:
-                            match_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                             match_date = datetime.strptime(date_str, '%Y-%m-%d').date()
                     except ValueError:
-                        pass # Keep None if parse fails
+                        pass
 
-                # Create or Update Match
-                match = Match.query.filter_by(name=fixture_name).first()
+                # Create or Update Match (Scoped to TeamSeason)
+                match = Match.query.filter_by(name=fixture_name, team_season_id=team_season.id).first()
                 if not match:
-                    match = Match(name=fixture_name)
+                    match = Match(name=fixture_name, team_season_id=team_season.id)
                     print(f"Creating Match: {fixture_name}")
                 
                 match.home_away = home_away
                 match.date = match_date
-                match.home_away = home_away
                 match.is_cancelled = is_cancelled
-                match.date = match_date
                 match.sheet_col = str(col_idx)
 
-                # Auto-populate location for Home matches if empty
+                # Auto-populate location
                 if not match.location and home_away:
                      clean_ha = home_away.strip().lower()
                      if clean_ha == 'home' or clean_ha == 'h':
@@ -95,9 +94,7 @@ class SyncService:
             print("Matches Synced.")
 
             # --- SYNC PLAYERS & AVAILABILITY ---
-            print("Syncing Players and Availabilities...")
-            # Players start from Row 5 (index 4)
-            # Player Name in Col C (index 2)
+            print("Syncing Players...")
             
             for row_idx in range(4, len(all_values)):
                 row_data = all_values[row_idx]
@@ -108,17 +105,19 @@ class SyncService:
                 if not player_name or not player_name.strip():
                     continue
                 
-                # Create or Update Player
+                # Create or Update Player (Global)
                 player = Player.query.filter_by(name=player_name).first()
                 if not player:
                     player = Player(name=player_name)
                     print(f"Creating Player: {player_name}")
                 
-                player.sheet_row = row_idx + 1 # 1-based index for sheet row
+                # Update sheet_row? This is tricky if multiple sheets.
+                # For now, we update it, but it might get overwritten by other syncs.
+                player.sheet_row = row_idx + 1 
                 db.session.add(player)
-                db.session.flush() # Flush to get player.id for availability
+                db.session.flush() 
                 
-                # Sync Availability for this player across all matches
+                # Sync Availability
                 for col_idx, match in matches_map.items():
                     status = row_data[col_idx] if col_idx < len(row_data) else ''
                     
@@ -126,8 +125,8 @@ class SyncService:
                         continue
                         
                     availability = Availability.query.filter_by(
-                        player_id=player.id, 
-                        match_id=match.id
+                         player_id=player.id, 
+                         match_id=match.id
                     ).first()
                     
                     if not availability:
@@ -148,17 +147,22 @@ class SyncService:
             db.session.rollback()
             return False
 
-    def sync_team_selections(self):
+    def sync_team_selections(self, team_season_id):
         """
         Syncs detailed team selections using Batch API to avoid Rate Limits.
-        Fetches all worksheet data in one go.
+        Scopes to the specific TeamSeason.
         """
-        print("Syncing Team Selections (Batch Mode)...")
-        matches = Match.query.all()
+        print(f"Syncing Team Selections (Batch Mode) for Context {team_season_id}...")
         
-        # 1. Get all worksheets metadata ONCE to resolve names
-        if not self.sheets_service.sheet:
-             self.sheets_service._initialize_sheet()
+        # Context
+        team_season = TeamSeason.query.get(team_season_id)
+        if not team_season: return
+        
+        # Filter matches by this context
+        matches = Match.query.filter_by(team_season_id=team_season.id).all()
+        
+        # Initialize proper sheet
+        self.sheets_service._initialize_sheet(team_season.spreadsheet_id)
         
         try:
              all_ws = self.sheets_service.sheet.worksheets()
@@ -312,8 +316,16 @@ class SyncService:
              print("Authentication required for sync")
              return False
 
-        if not self.sheets_service.sheet:
+        # Ensure we are using the correct sheet for this match
+        if match.team_season:
+             self.sheets_service._initialize_sheet(match.team_season.spreadsheet_id)
+        else:
+             # Fallback (legacy/dev protection)
              self.sheets_service._initialize_sheet()
+        
+        if not self.sheets_service.sheet:
+             print("Could not initialize sheet for match")
+             return False
         
         try:
              # Find matching worksheet

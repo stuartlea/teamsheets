@@ -16,14 +16,16 @@ class SheetsService:
         # Lazy initialization: Do not connect on startup
         # self._initialize_sheet()
     
-    def _initialize_sheet(self):
+    def _initialize_sheet(self, spreadsheet_id=None):
         """Initialize Google Sheets connection"""
+        target_id = spreadsheet_id or self.sheet_id
         try:
             client = self.oauth_service.get_sheets_client()
-            if client and self.sheet_id:
-                self.sheet = client.open_by_key(self.sheet_id)
+            if client and target_id:
+                self.sheet = client.open_by_key(target_id)
+                print(f"Connected to Google Sheet: {target_id}")
         except Exception as e:
-            print(f"Warning: Could not initialize Google Sheets: {e}")
+            print(f"Warning: Could not initialize Google Sheets ({target_id}): {e}")
     
     def is_authenticated(self):
         """Check if Google Sheets is authenticated"""

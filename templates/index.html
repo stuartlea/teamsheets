@@ -183,6 +183,547 @@
             );
         };
 
+        const TeamsManager = () => {
+            const [teams, setTeams] = useState([]);
+            const [seasons, setSeasons] = useState([]);
+            const [contexts, setContexts] = useState([]);
+            const [activeTab, setActiveTab] = useState('overview'); // overview, players, fixtures
+            const [newTeamName, setNewTeamName] = useState('');
+            const [selectedTeam, setSelectedTeam] = useState(null);
+            const [newSeasonId, setNewSeasonId] = useState('');
+            const [newSpreadsheetId, setNewSpreadsheetId] = useState('');
+
+            useEffect(() => {
+                fetchTeams();
+                fetchSeasons();
+                fetchContexts();
+            }, []);
+
+            const fetchTeams = async () => {
+                const res = await fetch('/api/teams');
+                const data = await res.json();
+                if (data.success) setTeams(data.teams);
+            };
+
+            const fetchSeasons = async () => {
+                const res = await fetch('/api/seasons');
+                const data = await res.json();
+                if (data.success) setSeasons(data.seasons);
+            };
+
+            const fetchContexts = async () => {
+                 const res = await fetch('/api/contexts');
+                 const data = await res.json();
+                 if (data.success) setContexts(data.contexts);
+            };
+
+            const handleAddTeam = async () => {
+                if (!newTeamName.trim()) return;
+                const res = await fetch('/api/teams', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: newTeamName})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setTeams([...teams, data.team]);
+                    setNewTeamName('');
+                } else {
+                    alert(data.error);
+                }
+            };
+
+            const handleLinkSeason = async () => {
+                if (!selectedTeam || !newSeasonId || !newSpreadsheetId) return;
+                const res = await fetch('/api/team-seasons', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        team_id: selectedTeam.id,
+                        season_id: newSeasonId,
+                        spreadsheet_id: newSpreadsheetId
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Linked successfully!');
+                    fetchContexts();
+                    // window.location.reload(); // No need to reload if we fetch contexts
+                } else {
+                    alert(data.error);
+                }
+            };
+
+            const handleDeleteContext = async (id) => {
+                if(!confirm('Are you sure you want to remove this link?')) return;
+                const res = await fetch(`/api/team-seasons/${id}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (data.success) {
+                    fetchContexts();
+                } else {
+                    alert('Failed to delete');
+                }
+            };
+
+            // Player Logic
+            const [players, setPlayers] = useState([]);
+            const [newPlayerName, setNewPlayerName] = useState('');
+
+            useEffect(() => {
+                if (activeTab === 'players') fetchPlayers();
+            }, [activeTab]);
+
+            const fetchPlayers = async () => {
+                const res = await fetch('/api/players');
+                const data = await res.json();
+                if (data.success) setPlayers(data.players);
+            };
+
+            const handleAddPlayer = async () => {
+                if (!newPlayerName.trim()) return;
+                const res = await fetch('/api/players', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: newPlayerName})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setPlayers([...players, data.player]);
+                    setNewPlayerName('');
+                } else {
+                    alert(data.error);
+                }
+            };
+
+            const handleDeletePlayer = async (id) => {
+                if(!confirm('Delete player? This might affect historic selections if not careful.')) return;
+                const res = await fetch(`/api/players/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    setPlayers(players.filter(p => p.id !== id));
+                }
+            };
+
+            // Fixture Logic
+            const [fixtures, setFixtures] = useState([]);
+            const [newFixtureDate, setNewFixtureDate] = useState('');
+            const [newFixtureOpponent, setNewFixtureOpponent] = useState('');
+            const [newFixtureVenue, setNewFixtureVenue] = useState('Home');
+
+            useEffect(() => {
+                // Determine context for fixtures
+                if (activeTab === 'fixtures' && selectedTeam) {
+                     const teamContext = contexts.find(c => c.team.id === selectedTeam.id);
+                     if (teamContext) {
+                         fetchFixtures(teamContext.id);
+                     } else {
+                         setFixtures([]); 
+                     }
+                }
+            }, [activeTab, selectedTeam, contexts]);
+
+            const fetchFixtures = async (tsId) => {
+                const res = await fetch(`/api/fixtures?team_season_id=${tsId}`);
+                const data = await res.json();
+                if (data.success) setFixtures(data.fixtures);
+            };
+
+            const handleAddFixture = async () => {
+                const teamContext = contexts.find(c => c.team.id === selectedTeam.id);
+                if (!teamContext) {
+                    alert('Please link a season first to add fixtures.');
+                    return;
+                }
+                if (!newFixtureDate || !newFixtureOpponent) return;
+
+                const res = await fetch('/api/fixtures', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        team_season_id: teamContext.id,
+                        date: newFixtureDate,
+                        name: newFixtureOpponent, 
+                        home_away: newFixtureVenue
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setFixtures([...fixtures, data.fixture].sort((a,b) => new Date(a.date) - new Date(b.date)));
+                    setNewFixtureDate('');
+                    setNewFixtureOpponent('');
+                } else {
+                    alert(data.error);
+                }
+            };
+
+            const handleDeleteFixture = async (id) => {
+                if(!confirm('Delete fixture?')) return;
+                const res = await fetch(`/api/fixtures/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    setFixtures(fixtures.filter(f => f.id !== id));
+                }
+            };
+
+            return (
+                <div>
+                    <h2 className="text-xl font-semibold mb-6">Team Management</h2>
+                    
+                    <div className="flex gap-4 mb-8 bg-gray-50 p-4 rounded-lg">
+                        <input 
+                            type="text" 
+                            placeholder="New Team Name (e.g. U14s)" 
+                            className="flex-1 border p-2 rounded"
+                            value={newTeamName}
+                            onChange={(e) => setNewTeamName(e.target.value)}
+                        />
+                        <button 
+                            onClick={handleAddTeam}
+                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                        >
+                            Create Team
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Team List */}
+                        <div className="col-span-1 border-r pr-6">
+                            <h3 className="font-bold mb-4 text-gray-700">Teams</h3>
+                            <ul className="space-y-2">
+                                {teams.map(t => (
+                                    <li 
+                                        key={t.id} 
+                                        onClick={() => setSelectedTeam(t)}
+                                        className={`p-3 rounded cursor-pointer border ${selectedTeam && selectedTeam.id === t.id ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                                    >
+                                        <div className="font-medium">{t.name}</div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Team Details / Linking */}
+                        <div className="col-span-2">
+                            {selectedTeam ? (
+                                <div>
+                                    <h3 className="font-bold mb-4 text-gray-700">Manage {selectedTeam.name}</h3>
+                                    
+                                    {/* Tabs */}
+                                    <div className="flex border-b border-gray-200 mb-6">
+                                        <button
+                                            onClick={() => setActiveTab('overview')}
+                                            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'overview' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Overview
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('players')}
+                                            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'players' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Players
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('fixtures')}
+                                            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'fixtures' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Fixtures
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('source_data')}
+                                            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'source_data' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Source Data
+                                        </button>
+                                    </div>
+
+                                    {activeTab === 'overview' && (
+                                        <div className="space-y-6">
+                                            {/* Stats Cards */}
+                                            {contexts.filter(c => c.team.id === selectedTeam.id).map(ctx => (
+                                                <div key={ctx.id} className="bg-white border rounded-lg p-6 shadow-sm">
+                                                    <div className="flex justify-between items-start mb-4">
+                                                        <div>
+                                                            <h4 className="text-lg font-bold text-gray-800">{ctx.season.name} Season</h4>
+                                                            <p className="text-sm text-gray-500">Spreadsheet Linked</p>
+                                                        </div>
+                                                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">Active</span>
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                                        <div className="bg-gray-50 p-4 rounded text-center">
+                                                            <div className="text-2xl font-bold text-blue-600">{ctx.stats?.player_count || 0}</div>
+                                                            <div className="text-xs text-gray-500 uppercase font-bold">Players</div>
+                                                        </div>
+                                                        <div className="bg-gray-50 p-4 rounded text-center">
+                                                            <div className="text-2xl font-bold text-purple-600">{ctx.stats?.fixture_count || 0}</div>
+                                                            <div className="text-xs text-gray-500 uppercase font-bold">Fixtures</div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Next Fixture Card */}
+                                                    {ctx.stats?.next_fixture ? (
+                                                        <div className="border border-blue-200 bg-blue-50 rounded p-4">
+                                                            <h5 className="text-sm font-bold text-blue-800 mb-2 uppercase">Next Fixture</h5>
+                                                            <div className="flex justify-between items-center">
+                                                                <div>
+                                                                    <div className="font-bold text-lg">{ctx.stats.next_fixture.name}</div>
+                                                                    <div className="text-sm text-gray-600">
+                                                                        {new Date(ctx.stats.next_fixture.date).toLocaleDateString()} • {ctx.stats.next_fixture.home_away}
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => window.location.href = `/?context_id=${ctx.id}&match_id=${ctx.stats.next_fixture.id}`}
+                                                                    className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 shadow-sm"
+                                                                >
+                                                                    Generate Sheet
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center p-4 bg-gray-50 rounded border border-dashed border-gray-300 text-gray-500 text-sm">
+                                                            No upcoming fixtures found.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            
+                                            {contexts.filter(c => c.team.id === selectedTeam.id).length === 0 && (
+                                                <div className="p-8 text-center bg-gray-50 rounded border border-dashed">
+                                                    <p className="text-gray-500 mb-4">No active seasons linked yet.</p>
+                                                    <button 
+                                                        onClick={() => setActiveTab('source_data')}
+                                                        className="text-blue-600 hover:underline"
+                                                    >
+                                                        Link a Spreadsheet in Source Data
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'source_data' && (
+                                        <div>
+                                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-6">
+                                                <h4 className="font-medium text-blue-800 mb-2">Link to a Season</h4>
+                                                <div className="space-y-3">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 uppercase">Season</label>
+                                                <select 
+                                                    className="w-full p-2 border rounded"
+                                                    value={newSeasonId}
+                                                    onChange={e => setNewSeasonId(e.target.value)}
+                                                >
+                                                    <option value="">Select Season...</option>
+                                                    {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 uppercase">Google Sheet ID</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full p-2 border rounded text-sm font-mono"
+                                                    placeholder="1KRCwRuvTR0DXaNT..."
+                                                    value={newSpreadsheetId}
+                                                    onChange={e => setNewSpreadsheetId(e.target.value)}
+                                                />
+                                            </div>
+                                            <button 
+                                                onClick={handleLinkSeason}
+                                                className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
+                                            >
+                                                Link Spreadsheet
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mb-6">
+                                        <h4 className="font-bold mb-3 text-gray-700">Linked Seasons</h4>
+                                        {contexts.filter(c => c.team.id === selectedTeam.id).length > 0 ? (
+                                            <div className="bg-white border rounded overflow-hidden">
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead className="bg-gray-50">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Season</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Spreadsheet ID</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-200">
+                                                        {contexts.filter(c => c.team.id === selectedTeam.id).map(ctx => (
+                                                            <tr key={ctx.id}>
+                                                                <td className="px-4 py-2 text-sm font-medium text-gray-900">{ctx.season.name}</td>
+                                                                <td className="px-4 py-2 text-sm text-gray-500 font-mono truncate max-w-[150px]" title={ctx.spreadsheet_id}>
+                                                                    {ctx.spreadsheet_id.substring(0, 10)}...
+                                                                </td>
+                                                                <td className="px-4 py-2 text-right text-sm">
+                                                                    <button 
+                                                                        onClick={() => handleDeleteContext(ctx.id)}
+                                                                        className="text-red-600 hover:text-red-900 ml-2"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <p className="text-gray-500 text-sm italic">No seasons linked yet.</p>
+                                        )}
+                                    </div>
+
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'players' && (
+                                        <div>
+                                            <div className="flex gap-2 mb-4">
+                                                <input 
+                                                    type="text" 
+                                                    className="border p-2 rounded flex-1"
+                                                    placeholder="Player Name"
+                                                    value={newPlayerName}
+                                                    onChange={e => setNewPlayerName(e.target.value)}
+                                                />
+                                                <button 
+                                                    onClick={handleAddPlayer}
+                                                    className="bg-green-600 text-white px-4 rounded hover:bg-green-700"
+                                                >
+                                                    Add Player
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="bg-white border rounded overflow-hidden max-h-[400px] overflow-y-auto">
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead className="bg-gray-50 sticky top-0">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-200">
+                                                        {players.map(p => (
+                                                            <tr key={p.id}>
+                                                                <td className="px-4 py-2 text-sm text-gray-900">{p.name}</td>
+                                                                <td className="px-4 py-2 text-right text-sm">
+                                                                    <button 
+                                                                        onClick={() => handleDeletePlayer(p.id)}
+                                                                        className="text-red-600 hover:text-red-900"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'fixtures' && (
+                                        <div>
+                                            {!contexts.find(c => c.team.id === selectedTeam.id) ? (
+                                                <div className="text-amber-600 bg-amber-50 p-4 rounded mb-4">
+                                                    Please link a Season in the Overview tab before managing fixtures.
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="flex gap-2 mb-4">
+                                                        <input 
+                                                            type="date" 
+                                                            className="border p-2 rounded"
+                                                            value={newFixtureDate}
+                                                            onChange={e => setNewFixtureDate(e.target.value)}
+                                                        />
+                                                        <input 
+                                                            type="text" 
+                                                            className="border p-2 rounded flex-1"
+                                                            placeholder="Opponent (e.g. Leek)"
+                                                            value={newFixtureOpponent}
+                                                            onChange={e => setNewFixtureOpponent(e.target.value)}
+                                                        />
+                                                        <select
+                                                            className="border p-2 rounded"
+                                                            value={newFixtureVenue}
+                                                            onChange={e => setNewFixtureVenue(e.target.value)}
+                                                        >
+                                                            <option value="Home">Home</option>
+                                                            <option value="Away">Away</option>
+                                                        </select>
+                                                        <button 
+                                                            onClick={handleAddFixture}
+                                                            className="bg-green-600 text-white px-4 rounded hover:bg-green-700"
+                                                        >
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="bg-white border rounded overflow-hidden max-h-[400px] overflow-y-auto">
+                                                        <table className="min-w-full divide-y divide-gray-200">
+                                                            <thead className="bg-gray-50 sticky top-0">
+                                                                <tr>
+                                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Opponent</th>
+                                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Venue</th>
+                                                                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-200">
+                                                                {fixtures.map(f => (
+                                                                    <tr key={f.id}>
+                                                                        <td className="px-4 py-2 text-sm text-gray-900">{f.date}</td>
+                                                                        <td className="px-4 py-2 text-sm font-medium">{f.name}</td>
+                                                                        <td className="px-4 py-2 text-sm text-gray-500">
+                                                                            <span className={`px-2 py-1 rounded text-xs ${f.home_away === 'Home' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
+                                                                                {f.home_away}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-4 py-2 text-right text-sm whitespace-nowrap">
+                                                                            <button 
+                                                                                onClick={() => {
+                                                                                    // Find context for this team
+                                                                                    const ctx = contexts.find(c => c.team.id === selectedTeam.id);
+                                                                                    if (ctx) {
+                                                                                        window.location.href = `/?context_id=${ctx.id}&match_id=${f.id}`;
+                                                                                    }
+                                                                                }}
+                                                                                className="text-blue-600 hover:text-blue-900 mr-3"
+                                                                                title="Generate Team Sheet"
+                                                                            >
+                                                                                Gen
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={() => handleDeleteFixture(f.id)}
+                                                                                className="text-red-600 hover:text-red-900"
+                                                                            >
+                                                                                Delete
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="text-sm text-gray-500 mt-6 pt-6 border-t">
+                                        <p>Select a context in the header to view existing links/data.</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-gray-400 text-center py-10">Select a team to manage details</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         function TeamSheetApp() {
             const [worksheets, setWorksheets] = useState([]);
             const [selectedWorksheet, setSelectedWorksheet] = useState('');
@@ -344,11 +885,54 @@
             }, [view]);
 
             const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [contexts, setContexts] = useState([]);
+            const [activeContext, setActiveContext] = useState(null);
 
             useEffect(() => {
                 checkAuthStatus();
-                fetchWorksheets();
+                fetchContexts();
             }, []);
+
+            // Handle URL params for deep linking
+            useEffect(() => {
+                if (contexts.length > 0) {
+                    const params = new URLSearchParams(window.location.search);
+                    const ctxId = params.get('context_id');
+                    const mId = params.get('match_id');
+
+                    if (ctxId) {
+                        const ctx = contexts.find(c => c.id.toString() === ctxId);
+                        if (ctx) {
+                            setActiveContext(ctx);
+                            if (mId) {
+                                window._pendingMatchId = mId;
+                            }
+                        }
+                    }
+                }
+            }, [contexts]);
+            
+            // Re-fetch fixtures when context changes
+            useEffect(() => {
+                if (activeContext) {
+                    fetchWorksheets();
+                }
+            }, [activeContext]);
+
+            const fetchContexts = async () => {
+                try {
+                    const response = await fetch('/api/contexts');
+                    const data = await response.json();
+                    if (data.success && data.contexts.length > 0) {
+                        setContexts(data.contexts);
+                        // Default to current season or first avail
+                        const current = data.contexts.find(c => c.season.is_current) || data.contexts[0];
+                        setActiveContext(current);
+                    }
+                } catch (error) {
+                    console.error('Error fetching contexts:', error);
+                }
+            };
 
             const [playerImages, setPlayerImages] = useState({});
 
@@ -499,12 +1083,24 @@
             };
 
             const fetchWorksheets = async () => {
+                if (!activeContext) return;
                 setLoading(true);
                 try {
-                    const response = await fetch('/api/db/matches');
+                    const response = await fetch(`/api/db/matches?team_season_id=${activeContext.id}`);
                     const data = await response.json();
                     if (data.success) {
                         setWorksheets(data.matches);
+                        // Check for pending match selection from URL params
+                        if (window._pendingMatchId) {
+                            // Ensure ID types match (API usually returns numbers, URL params are strings)
+                            // We compare loosely or ensure string conversion
+                            const matchExists = data.matches.find(m => m.id.toString() === window._pendingMatchId.toString());
+                            if (matchExists) {
+                                setSelectedWorksheet(matchExists.id);
+                                fetchTeamData(matchExists.id); // Trigger data load
+                            }
+                            window._pendingMatchId = null; // Clear to prevent re-selection
+                        }
                     } else {
                         console.error('Failed to fetch fixtures from database');
                     }
@@ -524,13 +1120,14 @@
             };
 
             const handleSync = async () => {
+                if (!activeContext) return;
                 const btn = document.getElementById('sync-btn');
                 const origText = btn.innerText;
                 btn.innerText = 'Syncing...';
                 btn.disabled = true;
                 
                 try {
-                    const response = await fetch('/api/sync');
+                    const response = await fetch(`/api/sync?team_season_id=${activeContext.id}`);
                     const data = await response.json();
                     if (data.success) {
                         alert('Database Synchronized Successfully!');
@@ -690,9 +1287,33 @@
                                 >
                                     Database
                                 </button>
+                                <button 
+                                    onClick={() => setView('teams')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'teams' ? 'bg-white text-gray-900 shadow' : 'text-gray-600 hover:text-gray-900'}`}
+                                >
+                                    Teams
+                                </button>
                             </div>
                         </div>
                         <div className="flex items-center space-x-4">
+                            {contexts.length > 0 && (
+                                <div className="mr-2">
+                                    <select 
+                                        value={activeContext ? activeContext.id : ''}
+                                        onChange={(e) => {
+                                            const ctx = contexts.find(c => c.id.toString() === e.target.value);
+                                            setActiveContext(ctx);
+                                        }}
+                                        className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {contexts.map(c => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.team.name} ({c.season.name})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             {isAuthenticated ? (
                                 <div className="flex items-center space-x-2">
                                     <button
@@ -746,6 +1367,7 @@
                                     <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Context</th>
                                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fixture</th>
                                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venue</th>
@@ -755,8 +1377,17 @@
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
                                             {dbData.matches.length > 0 ? (
-                                                dbData.matches.map((match) => (
+                                                dbData.matches.map((match) => {
+                                                    const ctx = contexts.find(c => c.id === match.team_season_id);
+                                                    return (
                                                     <tr key={match.id} className={match.is_cancelled ? "bg-red-50" : "hover:bg-gray-50"}>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {ctx ? (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                                    {ctx.team.name} <span className="text-gray-500 ml-1">({ctx.season.name})</span>
+                                                                </span>
+                                                            ) : '-'}
+                                                        </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                             {formatDbDate(match.date)}
                                                             {match.is_cancelled && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Cancelled</span>}
@@ -773,7 +1404,8 @@
                                                             </button>
                                                         </td>
                                                     </tr>
-                                                ))
+                                                    );
+                                                })
                                             ) : (
                                                 <tr>
                                                     <td colSpan="5" className="px-6 py-4 text-center text-sm text-gray-500">No matches found. Try syncing the database.</td>
@@ -810,6 +1442,10 @@
                                     </table>
                                 </div>
                             )}
+                        </div>
+                    ) : view === 'teams' ? (
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-8 w-full">
+                           <TeamsManager />
                         </div>
                     ) : (
                         /* Generator View */

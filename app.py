@@ -8,8 +8,9 @@ from services.sheets_service import SheetsService
 from services.oauth_service import OAuthService
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
-from models import db, Match, Player, TeamSelection, Availability
+from models import db, Match, Player, TeamSelection, Availability, Team, Season, TeamSeason
 
 # Load environment variables from .env file
 load_dotenv()
@@ -185,14 +186,18 @@ def sync_db_route():
     """Trigger database sync from browser (where we have auth session)"""
     if not sheets_service.is_authenticated():
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    team_season_id = request.args.get('team_season_id')
+    if not team_season_id:
+         return jsonify({'success': False, 'error': 'Missing team_season_id'}), 400
         
-    print("Starting Database Sync via API...")
+    print(f"Starting Database Sync via API for Context {team_season_id}...")
     sync_service = SyncService(sheets_service)
     
     # 1. Sync Master Data (Players, Matches, Availabilities)
-    if sync_service.sync_master_data():
+    if sync_service.sync_master_data(team_season_id):
         # 2. Sync Detail Data (Team Selections)
-        sync_service.sync_team_selections()
+        sync_service.sync_team_selections(team_season_id)
         return jsonify({'success': True, 'message': 'Database Sync Complete!'})
     else:
         return jsonify({'success': False, 'error': 'Sync Failed'}), 500
@@ -201,11 +206,224 @@ def sync_db_route():
 
 # from models import Match, Player, TeamSelection, Availability (Moved to top)
 
+@app.route('/api/contexts')
+def get_contexts():
+    """Get available Team/Season contexts"""
+    try:
+        contexts = TeamSeason.query.all()
+        result = [c.to_dict() for c in contexts]
+        return jsonify({'success': True, 'contexts': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# --- Team Management APIs ---
+
+@app.route('/api/teams', methods=['GET', 'POST'])
+def manage_teams():
+    if request.method == 'GET':
+        teams = Team.query.all()
+        return jsonify({'success': True, 'teams': [t.to_dict() for t in teams]})
+    
+    if request.method == 'POST':
+        data = request.json
+        if not data or 'name' not in data:
+            return jsonify({'success': False, 'error': 'Team name is required'}), 400
+        
+        team = Team(name=data['name'], logo_url=data.get('logo_url'))
+        db.session.add(team)
+        db.session.commit()
+        return jsonify({'success': True, 'team': team.to_dict()})
+
+@app.route('/api/teams/<int:team_id>', methods=['PUT', 'DELETE'])
+def update_team(team_id):
+    team = Team.query.get_or_404(team_id)
+    
+    if request.method == 'PUT':
+        data = request.json
+        team.name = data.get('name', team.name)
+        team.logo_url = data.get('logo_url', team.logo_url)
+        db.session.commit()
+        return jsonify({'success': True, 'team': team.to_dict()})
+
+@app.route('/api/seasons', methods=['GET', 'POST'])
+def manage_seasons():
+    if request.method == 'GET':
+        seasons = Season.query.order_by(Season.name.desc()).all()
+        return jsonify({'success': True, 'seasons': [s.to_dict() for s in seasons]})
+
+    if request.method == 'POST':
+        data = request.json
+        season = Season(name=data['name'], is_current=data.get('is_current', False))
+        if season.is_current:
+             # Unset other currents
+             Season.query.update({Season.is_current: False})
+        db.session.add(season)
+        db.session.commit()
+        return jsonify({'success': True, 'season': season.to_dict()})
+
+@app.route('/api/team-seasons', methods=['POST'])
+def manage_team_seasons():
+    data = request.json
+    try:
+        # Check if exists
+        exists = TeamSeason.query.filter_by(team_id=data['team_id'], season_id=data['season_id']).first()
+        if exists:
+            return jsonify({'success': False, 'error': 'Link already exists'}), 400
+
+        ts = TeamSeason(
+            team_id=data['team_id'],
+            season_id=data['season_id'],
+            spreadsheet_id=data['spreadsheet_id']
+        )
+        db.session.add(ts)
+        db.session.commit()
+        return jsonify({'success': True, 'team_season': ts.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/team-seasons/<int:ts_id>', methods=['PUT', 'DELETE'])
+def manage_team_season_item(ts_id):
+    ts = TeamSeason.query.get_or_404(ts_id)
+    
+    if request.method == 'DELETE':
+        db.session.delete(ts)
+        db.session.commit()
+        return jsonify({'success': True})
+
+    if request.method == 'PUT':
+        data = request.json
+        ts.spreadsheet_id = data.get('spreadsheet_id', ts.spreadsheet_id)
+        # Maybe allow changing season?
+        if 'season_id' in data:
+            ts.season_id = data['season_id']
+        db.session.commit()
+        return jsonify({'success': True, 'team_season': ts.to_dict()})
+
+# --- Player Management APIs ---
+
+@app.route('/api/players', methods=['GET', 'POST'])
+def manage_players():
+    if request.method == 'GET':
+        # Simple global list for now. 
+        # Future: Filter by team selections if needed.
+        players = Player.query.order_by(Player.name).all()
+        return jsonify({'success': True, 'players': [p.to_dict() for p in players]})
+
+    if request.method == 'POST':
+        data = request.json
+        if not data or 'name' not in data:
+             return jsonify({'success': False, 'error': 'Name required'}), 400
+        
+        # Check duplicate
+        exists = Player.query.filter_by(name=data['name']).first()
+        if exists:
+            return jsonify({'success': False, 'error': 'Player already exists'}), 400
+
+        player = Player(
+            name=data['name'],
+            position=data.get('position'),
+            is_forward=data.get('is_forward', False),
+            is_back=data.get('is_back', False)
+        )
+        db.session.add(player)
+        db.session.commit()
+        return jsonify({'success': True, 'player': player.to_dict()})
+
+@app.route('/api/players/<int:p_id>', methods=['PUT', 'DELETE'])
+def manage_player_item(p_id):
+    player = Player.query.get_or_404(p_id)
+    
+    if request.method == 'DELETE':
+        db.session.delete(player)
+        db.session.commit()
+        return jsonify({'success': True})
+
+    if request.method == 'PUT':
+        data = request.json
+        player.name = data.get('name', player.name)
+        player.position = data.get('position', player.position)
+        if 'is_forward' in data: player.is_forward = data['is_forward']
+        if 'is_back' in data: player.is_back = data['is_back']
+        
+        db.session.commit()
+        return jsonify({'success': True, 'player': player.to_dict()})
+
+# --- Fixture Management APIs ---
+
+@app.route('/api/fixtures', methods=['GET', 'POST'])
+def manage_fixtures():
+    if request.method == 'GET':
+        ts_id = request.args.get('team_season_id')
+        query = Match.query
+        if ts_id:
+            query = query.filter_by(team_season_id=ts_id)
+        
+        matches = query.order_by(Match.date).all()
+        return jsonify({'success': True, 'fixtures': [m.to_dict() for m in matches]})
+
+    if request.method == 'POST':
+        data = request.json
+        if not data or 'team_season_id' not in data:
+             return jsonify({'success': False, 'error': 'Team Season ID required'}), 400
+        
+        match = Match(
+            team_season_id=data['team_season_id'],
+            name=data.get('name', 'New Fixture'),
+            date=datetime.strptime(data['date'], '%Y-%m-%d').date() if data.get('date') else None,
+            home_away=data.get('home_away', 'Home'),
+            kickoff_time=data.get('kickoff_time'),
+            meet_time=data.get('meet_time'),
+            location=data.get('location'),
+            is_cancelled=data.get('is_cancelled', False)
+        )
+        db.session.add(match)
+        db.session.commit()
+        return jsonify({'success': True, 'fixture': match.to_dict()})
+
+@app.route('/api/fixtures/<int:m_id>', methods=['PUT', 'DELETE'])
+def manage_fixture_item(m_id):
+    match = Match.query.get_or_404(m_id)
+    
+    if request.method == 'DELETE':
+        db.session.delete(match)
+        db.session.commit()
+        return jsonify({'success': True})
+
+    if request.method == 'PUT':
+        data = request.json
+        if 'name' in data: match.name = data['name']
+        if 'date' in data: 
+             match.date = datetime.strptime(data['date'], '%Y-%m-%d').date() if data['date'] else None
+        if 'home_away' in data: match.home_away = data['home_away']
+        if 'kickoff_time' in data: match.kickoff_time = data['kickoff_time']
+        if 'meet_time' in data: match.meet_time = data['meet_time']
+        if 'location' in data: match.location = data['location']
+        if 'is_cancelled' in data: match.is_cancelled = data['is_cancelled']
+        
+        db.session.commit()
+        return jsonify({'success': True, 'fixture': match.to_dict()})
+
 @app.route('/api/db/matches')
 def get_db_matches():
-    """Get all matches from local DB"""
+    """Get matches filtered by TeamSeason context"""
     try:
-        matches = Match.query.order_by(Match.date.desc()).all()
+        team_season_id = request.args.get('team_season_id')
+        
+        query = Match.query
+        
+        if team_season_id:
+            query = query.filter_by(team_season_id=team_season_id)
+        else:
+            # Default to "Current" season if available
+            current_season = Season.query.filter_by(is_current=True).first()
+            if current_season and current_season.team_seasons:
+                 # Just pick the first linked team-season for now? 
+                 # Or return all? 
+                 # Let's return matches from ALL current season contexts
+                 season_ids = [ts.id for ts in current_season.team_seasons]
+                 query = query.filter(Match.team_season_id.in_(season_ids))
+        
+        matches = query.order_by(Match.date.desc()).all()
         result = []
         for m in matches:
             result.append({
@@ -216,7 +434,8 @@ def get_db_matches():
                 'kickoff': m.kickoff_time,
                 'meet_time': m.meet_time,
                 'location': m.location,
-                'is_cancelled': m.is_cancelled
+                'is_cancelled': m.is_cancelled,
+                'team_season_id': m.team_season_id
             })
         return jsonify({'success': True, 'matches': result})
     except Exception as e:
@@ -386,20 +605,29 @@ def get_db_players():
 # Register Sync Command (Keep for reference/future use if we add server-side auth)
 @app.cli.command("sync-db")
 def sync_db_command():
-    """Synchronize database with Google Sheets master data"""
+    """Synchronize database with Google Sheets master data for ALL contexts"""
     print("Starting Database Sync...")
     sync_service = SyncService(sheets_service)
     
-    # 1. Sync Master Data (Players, Matches, Availabilities)
-    if sync_service.sync_master_data():
-        print("Master Data Synced Successfully.")
-        
-        # 2. Sync Detail Data (Team Selections)
-        print("Syncing Team Selections (this may take a while)...")
-        sync_service.sync_team_selections()
-        print("Database Sync Complete!")
-    else:
-        print("Sync Failed.")
+    contexts = TeamSeason.query.all()
+    if not contexts:
+        print("No TeamSeason contexts found.")
+        return
+
+    for ts in contexts:
+        print(f"\n--- Syncing Context: {ts} ---")
+        # 1. Sync Master Data (Players, Matches, Availabilities)
+        if sync_service.sync_master_data(ts.id):
+            print("Master Data Synced Successfully.")
+            
+            # 2. Sync Detail Data (Team Selections)
+            print("Syncing Team Selections (this may take a while)...")
+            sync_service.sync_team_selections(ts.id)
+            print("Context Sync Complete!")
+        else:
+            print("Sync Failed for this context.")
+    
+    print("\nGlobal Database Sync Complete!")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
