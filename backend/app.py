@@ -4,6 +4,8 @@ Transforms Google Sheets data into professional team sheet graphics
 """
 
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_from_directory
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_cors import CORS
 from services.sheets_service import SheetsService
 from services.oauth_service import OAuthService
 import os
@@ -13,32 +15,55 @@ from datetime import datetime
 from models import db, Match, Player, TeamSelection, Availability, Team, Season, TeamSeason
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # Allow HTTP for OAuth in development (localhost only)
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
-app = Flask(__name__)
+# Explicitly set instance path to backend/instance
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+instance_path = os.path.join(backend_dir, 'instance')
+
+app = Flask(__name__, instance_path=instance_path, instance_relative_config=True)
+CORS(app, supports_credentials=True) # Enable CORS for all domains for development
+
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Database Config
+
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///teamsheets.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
-# Create tables
+# Create tables and default admin
 with app.app_context():
     db.create_all()
+    from models import User
+    if not User.query.filter_by(username='admin').first():
+        user = User(username='admin')
+        user.set_password('password123')
+        db.session.add(user)
+        db.session.commit()
+        print("Created default admin user")
 
 # Initialize services
 sheets_service = SheetsService()
 oauth_service = OAuthService()
 
+@login_manager.user_loader
+def load_user(user_id):
+    from models import User
+    return User.query.get(int(user_id))
+
 @app.route('/')
+@app.route('/api/')
 def index():
-    """Main application page"""
-    return render_template('index.html')
+    """Main application API root"""
+    return jsonify({'status': 'online', 'message': 'TeamSheets Backend API is running. Use the Frontend to interact.'})
 
 @app.route('/api/auth/status')
 def auth_status():
@@ -234,9 +259,12 @@ def manage_teams():
         db.session.commit()
         return jsonify({'success': True, 'team': team.to_dict()})
 
-@app.route('/api/teams/<int:team_id>', methods=['PUT', 'DELETE'])
+@app.route('/api/teams/<int:team_id>', methods=['GET', 'PUT', 'DELETE'])
 def update_team(team_id):
     team = Team.query.get_or_404(team_id)
+    
+    if request.method == 'GET':
+        return jsonify({'success': True, 'team': team.to_dict()})
     
     if request.method == 'PUT':
         data = request.json
@@ -329,6 +357,15 @@ def manage_players():
         db.session.commit()
         return jsonify({'success': True, 'player': player.to_dict()})
 
+@app.route('/api/db/player/<int:player_id>', methods=['GET'])
+def get_player(player_id):
+    """Get single player details"""
+    try:
+        player = Player.query.get_or_404(player_id)
+        return jsonify({'success': True, 'player': player.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/players/<int:p_id>', methods=['PUT', 'DELETE'])
 def manage_player_item(p_id):
     player = Player.query.get_or_404(p_id)
@@ -349,6 +386,12 @@ def manage_player_item(p_id):
         return jsonify({'success': True, 'player': player.to_dict()})
 
 # --- Fixture Management APIs ---
+
+@app.route('/api/match-formats', methods=['GET'])
+def get_match_formats():
+    from models import MatchFormat
+    formats = MatchFormat.query.all()
+    return jsonify({'success': True, 'formats': [f.to_dict() for f in formats]})
 
 @app.route('/api/fixtures', methods=['GET', 'POST'])
 def manage_fixtures():
@@ -446,18 +489,22 @@ def get_match_details(match_id):
     """Get single match details"""
     try:
         m = Match.query.get_or_404(match_id)
+        match_data = {
+            'id': m.id,
+            'name': m.name,
+            'date': m.date.isoformat() if m.date else None,
+            'home_away': m.home_away,
+            'kickoff_time': m.kickoff_time,
+            'meet_time': m.meet_time,
+            'location': m.location,
+            'is_cancelled': m.is_cancelled,
+            'team_season_id': m.team_season_id,
+            'format': m.format.to_dict() if m.format else None,
+            'opponent_name': m.opponent_name
+        }
         return jsonify({
             'success': True, 
-            'match': {
-                'id': m.id,
-                'name': m.name,
-                'date': m.date.isoformat() if m.date else None,
-                'home_away': m.home_away,
-                'kickoff': m.kickoff_time,
-                'meet_time': m.meet_time,
-                'location': m.location,
-                'is_cancelled': m.is_cancelled
-            }
+            'match': match_data
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -474,9 +521,54 @@ def update_match_details(match_id):
         if 'meet_time' in data: match.meet_time = data['meet_time']
         if 'location' in data: match.location = data['location']
         if 'is_cancelled' in data: match.is_cancelled = bool(data['is_cancelled'])
+        if 'opponent_name' in data: match.opponent_name = data['opponent_name']
         
         db.session.commit()
         return jsonify({'success': True, 'message': 'Match updated'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/db/match/<int:match_id>', methods=['GET'])
+def get_db_match(match_id):
+    """Get single match metadata"""
+    try:
+        match = Match.query.get_or_404(match_id)
+        return jsonify({'success': True, 'match': match.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/db/player/<int:player_id>', methods=['GET', 'PUT'])
+def manage_player_details(player_id):
+    """Get or Update player details"""
+    try:
+        player = Player.query.get_or_404(player_id)
+        
+        if request.method == 'GET':
+            return jsonify({'success': True, 'player': player.to_dict()})
+            
+        elif request.method == 'PUT':
+            data = request.json
+            
+            if 'name' in data: player.name = data['name']
+            if 'position' in data: player.position = data['position']
+            
+            # Handle left_date
+            if 'left_date' in data:
+                val = data['left_date']
+                if val:
+                    try:
+                        # Ensure only date part if datetime string passed
+                        if 'T' in val: val = val.split('T')[0]
+                        player.left_date = datetime.strptime(val, '%Y-%m-%d').date()
+                    except ValueError:
+                         pass 
+                else:
+                    player.left_date = None
+            
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Player updated', 'player': player.to_dict()})
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -497,11 +589,75 @@ def refresh_match_data(match_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/db/match/<int:match_id>/team', methods=['GET'])
-def get_db_match_team(match_id):
-    """Get full team details from DB for a specific match"""
+@app.route('/api/db/match/<int:match_id>/team', methods=['GET', 'POST'])
+def manage_match_team(match_id):
+    """Get or Update team details for a specific match"""
+    match = Match.query.get_or_404(match_id)
+
+    if request.method == 'POST':
+        try:
+            data = request.json
+            
+            # Clear existing selections for this match
+            TeamSelection.query.filter_by(match_id=match_id).delete()
+            
+            if data.get('multi_period'):
+                # Handle Grid Update
+                periods_map = data.get('periods', {})
+                for p_num, positions in periods_map.items():
+                    for pos, p_id in positions.items():
+                        if p_id:
+                            # Determine Role (Starter 1-15, Finisher 16+)
+                            # Simplified logic: 1-15 is Starter
+                            pos_int = int(pos)
+                            role = 'Starter' if pos_int <= 15 else 'Finisher'
+                            
+                            sel = TeamSelection(
+                                match_id=match_id,
+                                player_id=p_id,
+                                role=role,
+                                period=int(p_num),
+                                position_number=pos_int
+                            )
+                            db.session.add(sel)
+            
+            else:
+                # Legacy / Single Period Fallback
+                starters = data.get('starters', [])
+                finishers = data.get('substitutes', [])
+                
+                # Add Starters
+                for i, p_id in enumerate(starters):
+                    if p_id:
+                        sel = TeamSelection(
+                            match_id=match_id,
+                            player_id=p_id,
+                            role='Starter',
+                            period=1,
+                            position_number=i+1
+                        )
+                        db.session.add(sel)
+                
+                # Add Finishers
+                for i, p_id in enumerate(finishers):
+                    if p_id:
+                        sel = TeamSelection(
+                            match_id=match_id,
+                            player_id=p_id,
+                            role='Finisher',
+                            period=1,
+                            position_number=16+i
+                        )
+                        db.session.add(sel)
+            
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Team selection saved'})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    # GET Method Implementation
     try:
-        match = Match.query.get_or_404(match_id)
         
         # Format similar to worksheet response
         
@@ -538,7 +694,7 @@ def get_db_match_team(match_id):
         for s in starter_selections:
             if 1 <= s.position_number <= 15:
                 p_data = get_period_data(s.period)
-                p_data['starters'][s.position_number - 1] = {'name': s.player.name}
+                p_data['starters'][s.position_number - 1] = {'id': s.player.id, 'name': s.player.name}
         
         # Process Finishers
         for f in finisher_selections:
@@ -550,7 +706,7 @@ def get_db_match_team(match_id):
                 p_data['finishers'].append({})
             
             if idx >= 0:
-                p_data['finishers'][idx] = {'name': f.player.name}
+                p_data['finishers'][idx] = {'id': f.player.id, 'name': f.player.name}
 
         # Backwards compatibility: Populate root starters/finishers with Period 1 (or empty if no Period 1)
         root_data = periods_data.get(1, {
@@ -564,7 +720,8 @@ def get_db_match_team(match_id):
         fixture_info = {
             'home_away': match.home_away,
             'match_date': match.date.strftime('%d/%m/%Y') if match.date else '',
-            'is_cancelled': match.is_cancelled
+            'is_cancelled': match.is_cancelled,
+            'opponent_name': match.opponent_name
         }
         
         metadata = {}
@@ -572,15 +729,44 @@ def get_db_match_team(match_id):
         if match.meet_time: metadata['meet_time'] = match.meet_time
         if match.location: metadata['location'] = match.location
         
+        # Use DB Match Format
+        match_format = match.format
+        template_type = match_format.spreadsheet_key if match_format else 'Men'
+        
         return jsonify({
             'success': True,
-            'template_type': 'Men', # Defaulting to Men for now, or could store in Match model
+            'template_type': template_type,
+            'format': match_format.to_dict() if match_format else None,
             'starters': starters,   # Legacy support
             'finishers': finishers, # Legacy support
             'periods': periods_data, # New Multi-Period data
             'fixture_info': fixture_info,
             'metadata': metadata
         })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/db/match/<int:match_id>/availability', methods=['GET'])
+def get_match_availability(match_id):
+    """Get availability for a specific match"""
+    try:
+        match = Match.query.get_or_404(match_id)
+        avails = Availability.query.filter_by(match_id=match_id).all()
+        
+        # If no availability found, maybe lazy sync?
+        if not avails and sheets_service.is_authenticated():
+             # Check if we should sync
+             pass 
+
+        result = []
+        for a in avails:
+            result.append({
+                'player_id': a.player_id,
+                'name': a.player.name,
+                'status': a.status
+            })
+            
+        return jsonify({'success': True, 'availability': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -596,7 +782,9 @@ def get_db_players():
             result.append({
                 'id': p.id,
                 'name': p.name,
-                'caps': caps
+                'caps': caps,
+                'position': p.position,
+                'left_date': p.left_date.isoformat() if p.left_date else None
             })
         return jsonify({'success': True, 'players': result})
     except Exception as e:
@@ -628,6 +816,38 @@ def sync_db_command():
             print("Sync Failed for this context.")
     
     print("\nGlobal Database Sync Complete!")
+
+# --- Auth Routes ---
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    
+    from models import User
+    user = User.query.filter_by(username=username).first()
+    
+    if user and user.check_password(password):
+        login_user(user)
+        return jsonify({'success': True, 'user': user.to_dict()})
+    
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+@app.route('/api/logout', methods=['POST'])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({'success': True})
+
+@app.route('/api/me', methods=['GET'])
+def get_current_user():
+    if current_user.is_authenticated:
+        # permissions = [p.to_dict() for p in current_user.team_permissions]
+        permissions = []
+        user_data = current_user.to_dict()
+        user_data['permissions'] = permissions
+        return jsonify({'authenticated': True, 'user': user_data})
+    return jsonify({'authenticated': False})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

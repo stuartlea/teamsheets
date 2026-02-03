@@ -1,8 +1,69 @@
 
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import UserMixin
 
 db = SQLAlchemy()
+
+class User(UserMixin, db.Model):
+    """Represents a system user"""
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+    
+    # Relationships
+    team_permissions = db.relationship('TeamPermission', backref='user', lazy=True, cascade="all, delete-orphan")
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'is_admin': self.is_admin
+        }
+
+class TeamPermission(db.Model):
+    """Links a User to a Team with a specific role"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    role = db.Column(db.String(20), default='editor') # 'owner', 'admin', 'editor', 'viewer'
+    
+    def to_dict(self):
+        return {
+            'team_id': self.team_id,
+            'role': self.role
+        }
+
+class MatchFormat(db.Model):
+    """Defines the structure of a game (e.g. 15s, 7s, Waterfall)"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False) # e.g. "Standard 15s"
+    periods = db.Column(db.Integer, default=2) # Number of halves/quarters
+    period_duration = db.Column(db.Integer, default=30) # Minutes per period
+    players_on_pitch = db.Column(db.Integer, default=15) # 15, 7, etc.
+    
+    # Sync Configuration
+    spreadsheet_key = db.Column(db.String(50), nullable=True) # Text to match in Sheet Cell B2 (e.g. "Thirds")
+    column_config = db.Column(db.JSON, nullable=True) # JSON list of [period, col_letter] e.g. [[1, "H"], [2, "K"]]
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'periods': self.periods,
+            'period_duration': self.period_duration,
+            'players_on_pitch': self.players_on_pitch,
+            'spreadsheet_key': self.spreadsheet_key,
+            'column_config': self.column_config
+        }
 
 class Team(db.Model):
     """Represents a rugby team category (e.g. U15s, Men's 1st XV)"""
@@ -12,6 +73,7 @@ class Team(db.Model):
     
     # Relationships
     team_seasons = db.relationship('TeamSeason', backref='team', lazy=True)
+    permissions = db.relationship('TeamPermission', backref='team', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<Team {self.name}>'
@@ -51,8 +113,8 @@ class TeamSeason(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
     season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
-    spreadsheet_id = db.Column(db.String(100), nullable=False) # The distinct Google Sheet ID
-    sheet_name = db.Column(db.String(100), nullable=True) # Friendly name if multiple sheets per team/season? Usually just one.
+    spreadsheet_id = db.Column(db.String(100), nullable=True) # Optional now if using manual mode entirely
+    sheet_name = db.Column(db.String(100), nullable=True)
     
     # Relationships
     matches = db.relationship('Match', backref='team_season', lazy=True)
@@ -65,7 +127,6 @@ class TeamSeason(db.Model):
         fixture_count = Match.query.filter_by(team_season_id=self.id).count()
         
         # Player count: Unique players selected in matches for this season
-        # Using a join: TeamSeason -> Match -> TeamSelection
         player_count = db.session.query(TeamSelection.player_id).join(Match).filter(Match.team_season_id == self.id).distinct().count()
         
         # Next Fixture
@@ -91,16 +152,18 @@ class TeamSeason(db.Model):
         }
 
 class Player(db.Model):
-    """Stores player data from the Master sheet. Global pool of players."""
+    """Stores player data. Global pool."""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    sheet_row = db.Column(db.Integer, nullable=True) # Row index in Master sheet for reference (Legacy/Context specific?)
-    # Note: sheet_row might be problematic if a player is in multiple sheets at different rows.
-    # ideally we drop sheet_row or make it relative to the TeamSeason context, but for now we keep it simple.
-    
+    sheet_row = db.Column(db.Integer, nullable=True) # Legacy sync
     position = db.Column(db.String(50), nullable=True)
     is_forward = db.Column(db.Boolean, default=False)
     is_back = db.Column(db.Boolean, default=False)
+    
+    # New fields
+    spond_id = db.Column(db.String(100), nullable=True)
+    deleted_at = db.Column(db.DateTime, nullable=True) # Soft delete
+    left_date = db.Column(db.Date, nullable=True) # Date player left the team
 
     # Relationships
     availabilities = db.relationship('Availability', backref='player', lazy=True)
@@ -116,25 +179,39 @@ class Player(db.Model):
             'sheet_row': self.sheet_row,
             'position': self.position,
             'is_forward': self.is_forward,
-            'is_back': self.is_back
+            'is_back': self.is_back,
+            'spond_id': self.spond_id,
+            'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
+            'left_date': self.left_date.isoformat() if self.left_date else None
         }
 
 class Match(db.Model):
     """Stores match/fixture data linked to a specific TeamSeason"""
     id = db.Column(db.Integer, primary_key=True)
-    team_season_id = db.Column(db.Integer, db.ForeignKey('team_season.id'), nullable=True) # Making nullable temporarily to ease migration/dev
-    name = db.Column(db.String(100), nullable=False) # e.g. "01: Leek (A)"
-    date = db.Column(db.Date, nullable=True)
-    home_away = db.Column(db.String(10), nullable=True) # "Home" or "Away"
-    sheet_col = db.Column(db.String(5), nullable=True) # Column letter/index in Master sheet
+    team_season_id = db.Column(db.Integer, db.ForeignKey('team_season.id'), nullable=True)
     
-    # Metadata gathered during team sheet generation
+    # Core Data
+    name = db.Column(db.String(100), nullable=False)
+    date = db.Column(db.Date, nullable=True)
+    home_away = db.Column(db.String(10), nullable=True)
+    sheet_col = db.Column(db.String(5), nullable=True) # Legacy sync
+    opponent_name = db.Column(db.String(100), nullable=True) # New field for clean opponent name
+    
+    # New Fields
+    is_manual = db.Column(db.Boolean, default=False) # True if created in app, False if synced
+    format_id = db.Column(db.Integer, db.ForeignKey('match_format.id'), nullable=True)
+    result_home_score = db.Column(db.Integer, nullable=True)
+    result_away_score = db.Column(db.Integer, nullable=True)
+    scorers = db.Column(db.JSON, nullable=True) # Store as JSON list for now: [{"player_id": 1, "points": 5, "type": "try"}]
+    
+    # Metadata
     kickoff_time = db.Column(db.String(20), nullable=True)
     meet_time = db.Column(db.String(20), nullable=True)
     location = db.Column(db.String(200), nullable=True)
     is_cancelled = db.Column(db.Boolean, default=False)
     
     # Relationships
+    format = db.relationship('MatchFormat', backref='matches', lazy=True)
     availabilities = db.relationship('Availability', backref='match', lazy=True, cascade="all, delete-orphan")
     team_selections = db.relationship('TeamSelection', backref='match', lazy=True, cascade="all, delete-orphan")
 
@@ -146,12 +223,22 @@ class Match(db.Model):
             'id': self.id,
             'team_season_id': self.team_season_id,
             'name': self.name,
+            'opponent_name': self.opponent_name,
             'date': self.date.isoformat() if self.date else None,
             'home_away': self.home_away,
             'kickoff_time': self.kickoff_time,
             'meet_time': self.meet_time,
             'location': self.location,
-            'is_cancelled': self.is_cancelled
+            'is_cancelled': self.is_cancelled,
+            'is_manual': self.is_manual,
+            'format_id': self.format_id,
+            'format_name': self.format.name if self.format else None,
+            'format': self.format.to_dict() if self.format else None,
+            'result': {
+                'home': self.result_home_score,
+                'away': self.result_away_score
+            } if self.result_home_score is not None else None,
+            'scorers': self.scorers
         }
 
 class Availability(db.Model):
@@ -159,22 +246,20 @@ class Availability(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=False)
     player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
-    status = db.Column(db.String(50), nullable=True) # "Selected", "DNA", "Injured", etc.
-    
-    # Metadata
+    status = db.Column(db.String(50), nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f'<Availability {self.player.name} - {self.match.name}: {self.status}>'
 
 class TeamSelection(db.Model):
-    """Stores the actual team selection (Starters/Finishers) for a match"""
+    """Stores the actual team selection"""
     id = db.Column(db.Integer, primary_key=True)
     match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=False)
     player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
-    position_number = db.Column(db.Integer, nullable=True) # 1-15 for starters, 16+ for finishers
-    role = db.Column(db.String(20), nullable=True) # "Starter" or "Finisher"
-    period = db.Column(db.Integer, default=1) # 1, 2, 3, 4 etc.
+    position_number = db.Column(db.Integer, nullable=True)
+    role = db.Column(db.String(20), nullable=True) # Starter/Finisher
+    period = db.Column(db.Integer, default=1)
     
     def __repr__(self):
         return f'<TeamSelection {self.match.name} P{self.period} - {self.player.name} ({self.position_number})>'

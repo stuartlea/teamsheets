@@ -1,5 +1,11 @@
+import sys
+import os
+
+# Add backend directory to path
+sys.path.append(os.path.join(os.getcwd(), 'backend'))
+
 from app import app
-from models import db, Team, Season, TeamSeason
+from models import db, Team, Season, TeamSeason, MatchFormat, User
 from services.sheets_service import SheetsService
 from services.sync_service import SyncService
 import os
@@ -11,11 +17,67 @@ def seed_database():
         print("Creating all tables...")
         db.create_all()
 
-        # 1. Create Default Team
+        # 0. Create Admin User (Since we dropped everything)
+        print("Creating Admin User...")
+        if not User.query.filter_by(username='admin').first():
+            user = User(username='admin')
+            user.set_password('admin')
+            db.session.add(user)
+            db.session.commit()
+
+        # 1. Create Default Match Formats (Based on Legacy Hardcoded Logic)
+        print("Seeding Match Formats...")
+        formats = [
+            # Standard / Default
+            {
+                "name": "Standard 15s",
+                "periods": 2, # Traditionally 2 halves
+                "players_on_pitch": 15,
+                "spreadsheet_key": "Men", # Default usually matches "Men" or empty in logic
+                "column_config": [[1, "B"]] 
+            },
+            # Thirds
+            {
+                "name": "Thirds Game",
+                "periods": 3,
+                "players_on_pitch": 15,
+                "spreadsheet_key": "Thirds",
+                "column_config": [[1, "AB"], [2, "AE"], [3, "AH"]]
+            },
+            # Quarters
+            {
+                "name": "Four Quarters",
+                "periods": 4,
+                "players_on_pitch": 15,
+                "spreadsheet_key": "Quarters",
+                "column_config": [[1, "H"], [2, "K"], [3, "N"], [4, "Q"]]
+            },
+            # Halves (Specific Column mapping distinct from Standard)
+            {
+                "name": "Two Halves (Alt)",
+                "periods": 2,
+                "players_on_pitch": 15,
+                "spreadsheet_key": "Halves",
+                "column_config": [[1, "U"], [2, "X"]]
+            }
+        ]
+
+        for fmt in formats:
+            m = MatchFormat(
+                name=fmt["name"],
+                periods=fmt["periods"],
+                players_on_pitch=fmt["players_on_pitch"],
+                spreadsheet_key=fmt["spreadsheet_key"],
+                column_config=fmt["column_config"]
+            )
+            db.session.add(m)
+        db.session.commit()
+
+        # 2. Create Default Team
         team = Team(name="Sandbach U15s")
         db.session.add(team)
         
-        # 2. Create Default Season
+        # 3. Create Default Season
         season = Season(name="2025-2026", is_current=True)
         db.session.add(season)
         db.session.commit() # Commit to get IDs

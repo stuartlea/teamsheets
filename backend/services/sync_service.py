@@ -1,5 +1,5 @@
 
-from models import db, Player, Match, Availability, TeamSelection, TeamSeason
+from models import db, Player, Match, Availability, TeamSelection, TeamSeason, MatchFormat
 from datetime import datetime
 
 class SyncService:
@@ -80,6 +80,23 @@ class SyncService:
                 match.date = match_date
                 match.is_cancelled = is_cancelled
                 match.sheet_col = str(col_idx)
+
+                # Parse Opponent Name
+                # Expected format: "123: Opponent Name (H)" or "Opponent Name"
+                # Strip ID prefix
+                op_name = fixture_name
+                if ':' in op_name:
+                    op_name = op_name.split(':', 1)[1].strip()
+                
+                # Strip (H)/(A) suffix
+                if op_name.upper().endswith(('(H)', '(A)', '(H/A)')):
+                     op_name = op_name.rsplit('(', 1)[0].strip()
+                
+                # Strip vs prefix if present (e.g. "vs Opponent")
+                if op_name.lower().startswith('vs '):
+                     op_name = op_name[3:].strip()
+
+                match.opponent_name = op_name
 
                 # Auto-populate location
                 if not match.location and home_away:
@@ -217,29 +234,30 @@ class SyncService:
              try:
                  # Clear existing selections
                  TeamSelection.query.filter_by(match_id=match.id).delete()
-                 
-                 # Get Template Type (Cell B1 -> Row 0, Col 1)
-                 template_type = all_values[0][1] if len(all_values) > 0 and len(all_values[0]) > 1 else None
-                 if not template_type:
-                     # Fallback logic if needed, or just skip
-                     print(f"  - No template type in B1 for {match.name}")
-                     continue
-
-                 # Determine Periods and Columns (Same logic as sync_single_match)
-                 periods_config = [] # List of (period_num, col_letter)
+                 # Identify Format from DB
+                 template_type = all_values[0][1] if len(all_values) > 0 and len(all_values[0]) > 1 else ""
                  t_type = str(template_type).strip() if template_type else ""
                  
-                 if "Thirds" in t_type:
-                     periods_config = [(1, "AB"), (2, "AE"), (3, "AH")]
-                 elif "Quarters" in t_type:
-                     periods_config = [(1, "H"), (2, "K"), (3, "N"), (4, "Q")]
-                 elif "Halves" in t_type and "2 Halves" not in t_type:
-                     periods_config = [(1, "U"), (2, "X")]
-                 else:
-                     # Default / Legacy
-                     col = self.sheets_service.get_column_for_template(t_type)
-                     periods_config = [(1, col)]
+                 # Fetch all formats to check against keys
+                 formats = MatchFormat.query.all()
+                 selected_format = None
                  
+                 # Find matching format by key
+                 for fmt in formats:
+                     if fmt.spreadsheet_key and fmt.spreadsheet_key in t_type:
+                         selected_format = fmt
+                         break
+                 
+                 # Fallback to Standard
+                 if not selected_format:
+                     selected_format = MatchFormat.query.filter_by(name="Standard 15s").first()
+                 
+                 if selected_format:
+                     match.format_id = selected_format.id
+                     periods_config = selected_format.column_config or [[1, "B"]]
+                 else:
+                     periods_config = [[1, "B"]]
+
                  def col_letter_to_index(col_letter):
                     num = 0
                     for c in col_letter:
@@ -351,40 +369,35 @@ class SyncService:
              # Clear existing
              TeamSelection.query.filter_by(match_id=match.id).delete()
              
-             # Get Template Type from B1
-             template_type = data[0][1] if len(data) > 0 and len(data[0]) > 1 else None
-             if not template_type:
-                  # Fallback or error? Let's check if it's there
-                  print(f"  - No template type found in B1 for {match.name}")
-                  # Try to detect if it's empty matches template...
-                  # For now, default to single period (Men/Legacy) which uses Column B usually?
-                  # Actually let's trust get_column_for_template from existing service for default
-                  pass
-
-             print(f"  - Template Type: {template_type}")
-
-             # Determine Periods and Columns
-             # "Single Match - Thirds": [AB, AE, AH]
-             # "Single Match - Quarters": [H, K, N, Q]
-             # "Single Match - Halves": [U, X]
-             # default: [B] (Legacy/Men)
-             
-             periods_config = [] # List of (period_num, col_letter)
-             
-             # Clean up string for matching
+             # Identify Format from DB
+             template_type = data[0][1] if len(data) > 0 and len(data[0]) > 1 else ""
              t_type = str(template_type).strip() if template_type else ""
              
-             if "Thirds" in t_type:
-                 periods_config = [(1, "AB"), (2, "AE"), (3, "AH")]
-             elif "Quarters" in t_type:
-                 periods_config = [(1, "H"), (2, "K"), (3, "N"), (4, "Q")]
-             elif "Halves" in t_type and "2 Halves" not in t_type:
-                 periods_config = [(1, "U"), (2, "X")]
-             else:
-                 # Default / Legacy
-                 col = self.sheets_service.get_column_for_template(t_type)
-                 periods_config = [(1, col)]
+             print(f"  - Template Type: {t_type}")
              
+             # Fetch all formats to check against keys
+             formats = MatchFormat.query.all()
+             selected_format = None
+             
+             # Find matching format by key
+             for fmt in formats:
+                 if fmt.spreadsheet_key and fmt.spreadsheet_key in t_type:
+                     selected_format = fmt
+                     break
+             
+             # Fallback to Standard if not found
+             if not selected_format:
+                 selected_format = MatchFormat.query.filter_by(name="Standard 15s").first()
+                 
+             if selected_format:
+                 match.format_id = selected_format.id
+                 periods_config = selected_format.column_config or [[1, "B"]]
+                 print(f"  - Detected Format: {selected_format.name}")
+             else:
+                 # Should not happen if seeded correctly
+                 print("  - WARNING: No matching or default format found. Defaulting to B col.")
+                 periods_config = [[1, "B"]]
+
              def col_letter_to_index(col_letter):
                 num = 0
                 for c in col_letter:
@@ -394,7 +407,7 @@ class SyncService:
 
              for period_num, col_letter in periods_config:
                  name_col_idx = col_letter_to_index(col_letter)
-                 print(f"  - Syncing Period {period_num} from Column {col_letter} (Index {name_col_idx})")
+                 print(f"  - Syncing Period {period_num} from Column {col_letter}")
 
                  # Sync Starters (Rows 5-19 -> indices 4-18)
                  for pos_idx in range(4, 19):
