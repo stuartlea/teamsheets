@@ -225,6 +225,9 @@ def sync_db_route():
         sync_service.sync_team_selections(team_season_id)
         return jsonify({'success': True, 'message': 'Database Sync Complete!'})
     else:
+        # Check if token was revoked during sync attempt
+        if not sheets_service.is_authenticated():
+            return jsonify({'success': False, 'error': 'Authentication expired during sync'}), 401
         return jsonify({'success': False, 'error': 'Sync Failed'}), 500
 
 # --- Database Browser API ---
@@ -385,6 +388,55 @@ def manage_player_item(p_id):
         db.session.commit()
         return jsonify({'success': True, 'player': player.to_dict()})
 
+
+@app.route('/api/players/merge', methods=['POST'])
+def merge_players():
+    """Merge source player into target player"""
+    data = request.json
+    source_id = data.get('source_id')
+    target_id = data.get('target_id')
+    
+    if not source_id or not target_id:
+        return jsonify({'success': False, 'error': 'Source and Target IDs required'}), 400
+        
+    if source_id == target_id:
+        return jsonify({'success': False, 'error': 'Cannot merge player into themselves'}), 400
+
+    try:
+        source_player = Player.query.get_or_404(source_id)
+        target_player = Player.query.get_or_404(target_id)
+        
+        # 1. Migrate Team Selections
+        source_selections = TeamSelection.query.filter_by(player_id=source_id).all()
+        for sel in source_selections:
+            target_in_match = TeamSelection.query.filter_by(match_id=sel.match_id, player_id=target_id).first()
+            if target_in_match:
+                db.session.delete(sel)
+            else:
+                sel.player_id = target_id
+        
+        # 2. Migrate Availabilities
+        source_avails = Availability.query.filter_by(player_id=source_id).all()
+        for avail in source_avails:
+            target_avail = Availability.query.filter_by(match_id=avail.match_id, player_id=target_id).first()
+            if target_avail:
+                db.session.delete(avail)
+            else:
+                avail.player_id = target_id
+        
+        # 3. Delete Source Player
+        db.session.delete(source_player)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Merged {source_player.name} into {target_player.name}'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # --- Fixture Management APIs ---
 
 @app.route('/api/match-formats', methods=['GET'])
@@ -483,6 +535,31 @@ def get_db_matches():
         return jsonify({'success': True, 'matches': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+@app.route('/api/db/locations', methods=['GET'])
+def get_locations():
+    """Get distinct locations with context"""
+    try:
+        # Get unique locations with opponent context
+        results = db.session.query(Match.location, Match.opponent_name)\
+            .filter(Match.location != None, Match.location != '')\
+            .distinct().all()
+        
+        # Aggregate by location to ensure uniqueness
+        loc_map = {}
+        for r in results:
+            addr = r.location.strip()
+            if not addr: continue
+            
+            if addr not in loc_map:
+                loc_map[addr] = {'address': addr, 'opponents': []}
+            
+            if r.opponent_name:
+                loc_map[addr]['opponents'].append(r.opponent_name)
+        
+        return jsonify({'success': True, 'locations': list(loc_map.values())})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/db/match/<int:match_id>', methods=['GET'])
 def get_match_details(match_id):

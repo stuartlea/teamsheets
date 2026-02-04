@@ -8,5 +8,8 @@ export const playerService = {
   getMatchSelection: (matchId) => api.get(`/db/match/${matchId}/team`),
 
   // Update match selection (save lineup)
-  saveMatchSelection: (matchId, selectionData) => api.post(`/db/match/${matchId}/team`, selectionData)
+  saveMatchSelection: (matchId, selectionData) => api.post(`/db/match/${matchId}/team`, selectionData),
+
+  // Merge players
+  merge: (sourceId, targetId) => api.post('/players/merge', { source_id: sourceId, target_id: targetId })
 };

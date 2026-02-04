@@ -67,19 +67,12 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                 dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
             }
 
-            // Auto-location for Home
-            let loc = meta.location || '';
-            const homeAway = (fixInfo.home_away || '').toLowerCase();
-            if (!loc && (homeAway === 'home' || homeAway === 'h')) {
-                loc = 'Sandbach RUFC, Bradwall Road, Sandbach. CW11 1RA';
-            }
-
             setMetadata(prev => ({
                 ...prev,
                 match_date: dateStr,
                 kickoff: meta.kickoff || '',
                 meet_time: meta.meet_time || '',
-                location: loc
+                location: meta.location || ''
             }));
         }
     }, [teamData]);
@@ -235,57 +228,15 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
 
                             {/* Metadata Overrides */}
                             <div className="space-y-3 pt-4 border-t border-slate-200">
-                                <h3 className="font-semibold text-sm text-slate-500 uppercase">Match Details</h3>
+                                <h3 className="font-semibold text-sm text-slate-500 uppercase">Team Sheet Title</h3>
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500">Kickoff</label>
                                     <input 
                                         type="text" 
-                                        value={metadata.kickoff}
-                                        onChange={(e) => {
-                                            const ko = e.target.value;
-                                            let updates = {kickoff: ko};
-                                            // Auto-calculate meet time if empty
-                                            if (!metadata.meet_time && ko.match(/^\d{1,2}:\d{2}$/)) {
-                                                const [hours, mins] = ko.split(':').map(Number);
-                                                const meetHours = hours - 1;
-                                                if (meetHours >= 0) {
-                                                    updates.meet_time = `${meetHours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-                                                }
-                                            }
-                                            setMetadata(prev => ({...prev, ...updates}));
-                                        }}
+                                        value={metadata.custom_title}
+                                        onChange={e => setMetadata({...metadata, custom_title: e.target.value})}
                                         className="w-full p-2 border rounded text-sm"
+                                        placeholder="e.g. SANDBACH RUFC U15s"
                                     />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500">Meet Time</label>
-                                    <input 
-                                        type="text" 
-                                        value={metadata.meet_time}
-                                        onChange={e => setMetadata({...metadata, meet_time: e.target.value})}
-                                        className="w-full p-2 border rounded text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500">Location</label>
-                                    <select 
-                                        value={metadata.location}
-                                        onChange={e => setMetadata({...metadata, location: e.target.value})}
-                                        className="w-full p-2 border rounded text-sm"
-                                    >
-                                        <option value="">Select...</option>
-                                        <option value="Sandbach RUFC, Bradwall Road, Sandbach. CW11 1RA">Home (Sandbach RUFC)</option>
-                                        <option value="Custom">Custom</option>
-                                    </select>
-                                    {metadata.location === 'Custom' && (
-                                        <input 
-                                            type="text" 
-                                            value={metadata.custom_location}
-                                            onChange={e => setMetadata({...metadata, custom_location: e.target.value})}
-                                            className="w-full mt-1 p-2 border rounded text-sm"
-                                            placeholder="Custom location..."
-                                        />
-                                    )}
                                 </div>
                             </div>
                             
@@ -484,10 +435,10 @@ function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, featuredL
                 <text x="0" y="10" fill="white" fontSize="12" fontWeight="bold" style={{ fontFamily: 'sans-serif' }}>
                     {metadata.match_date ? new Date(metadata.match_date).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'}).toUpperCase() : ''}
                 </text>
-                <text x="150" y="10" fill="white" fontSize="12" fillOpacity="0.9" style={{ fontFamily: 'sans-serif' }}>
+                <text x="130" y="10" fill="white" fontSize="12" fillOpacity="0.9" style={{ fontFamily: 'sans-serif' }}>
                     KO: {metadata.kickoff || 'TBC'}  |  MEET: {metadata.meet_time || 'TBC'}
                 </text>
-                <g transform="translate(350, 0)">
+                <g transform="translate(300, 0)">
                     <path d="M6 0C2.7 0 0 2.7 0 6c0 4.5 6 10 6 10s6-5.5 6-10c0-3.3-2.7-6-6-6zm0 8.5c-1.4 0-2.5-1.1-2.5-2.5S4.6 3.5 6 3.5s2.5 1.1 2.5 2.5S7.4 8.5 6 8.5z" fill="#10b981" transform="translate(0, 0) scale(1.2)"/>
                     <text x="18" y="10" fill="white" fontSize="12" fillOpacity="0.9" style={{ fontFamily: 'sans-serif' }}>
                         {displayLocation}

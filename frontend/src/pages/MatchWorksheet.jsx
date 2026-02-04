@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fixtureService } from '../services/fixtures';
-import { Calendar, MapPin, Clock, ChevronLeft } from 'lucide-react';
+import { Calendar, MapPin, Clock, ChevronLeft, Search, Home, X, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import LineupBuilder from '../components/LineupBuilder';
 import AvailabilityTab from '../components/AvailabilityTab';
 import TeamSheetPreview from '../components/TeamSheetPreview';
+import MatchDetailsForm from '../components/MatchDetailsForm';
 
 export default function MatchWorksheet() {
   const { matchId } = useParams();
@@ -124,59 +125,7 @@ export default function MatchWorksheet() {
             <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 max-w-2xl mx-auto">
                 <h2 className="text-xl font-bold mb-6 text-white border-b border-slate-700 pb-2">Match Details</h2>
                 {match && (
-                    <form onSubmit={handleUpdateMatch} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-semibold text-slate-400 mb-1">Opponent Name</label>
-                            <input 
-                                name="opponent_name" 
-                                defaultValue={match.opponent_name || ''} 
-                                placeholder={match.name}
-                                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Overrides the fixture name in team sheets.</p>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-400 mb-1">Kickoff Time</label>
-                                <input 
-                                    name="kickoff" 
-                                    defaultValue={match.kickoff_time || ''} 
-                                    placeholder="e.g. 14:15"
-                                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-400 mb-1">Meet Time</label>
-                                <input 
-                                    name="meet_time" 
-                                    defaultValue={match.meet_time || ''} 
-                                    placeholder="e.g. 13:00"
-                                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-semibold text-slate-400 mb-1">Location</label>
-                            <input 
-                                name="location" 
-                                defaultValue={match.location || ''} 
-                                placeholder="Match Location"
-                                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
-                            />
-                        </div>
-
-                        <div className="pt-4 flex justify-end">
-                            <button 
-                                type="submit" 
-                                disabled={updateMatchMutation.isPending}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
-                            >
-                                {updateMatchMutation.isPending ? 'Saving...' : 'Save Changes'}
-                            </button>
-                        </div>
-                    </form>
+                    <MatchDetailsForm match={match} onSubmit={handleUpdateMatch} isPending={updateMatchMutation.isPending} />
                 )}
             </div>
         )}

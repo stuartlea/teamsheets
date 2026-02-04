@@ -25,7 +25,14 @@ class SheetsService:
                 self.sheet = client.open_by_key(target_id)
                 print(f"Connected to Google Sheet: {target_id}")
         except Exception as e:
-            print(f"Warning: Could not initialize Google Sheets ({target_id}): {e}")
+            error_str = str(e)
+            print(f"Warning: Could not initialize Google Sheets ({target_id}): {error_str}")
+            
+            # Check for expired/revoked token
+            if 'invalid_grant' in error_str or 'Token has been expired' in error_str:
+                print("Token expired or revoked. Clearing credentials to force re-auth.")
+                self.oauth_service.revoke_credentials()
+                self.sheet = None
     
     def is_authenticated(self):
         """Check if Google Sheets is authenticated"""

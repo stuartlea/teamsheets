@@ -28,6 +28,9 @@ export const fixtureService = {
         const res = await api.get(`/db/match/${id}/availability`);
         return res;
     },
+    getLocations: async () => {
+        return api.get('/db/locations');
+    },
   
   delete: (id) => api.delete(`/fixtures/${id}`),
 };

@@ -4,14 +4,16 @@ import { useQuery } from '@tanstack/react-query';
 import { teamService } from '../services/teams';
 import { seasonService, fixtureService } from '../services/fixtures';
 import { playerService } from '../services/players';
-import { Calendar, Users, Settings, ChevronDown, ListFilter, Shield } from 'lucide-react';
+import { Calendar, Users, Settings, ChevronDown, ListFilter, Shield, GitMerge } from 'lucide-react';
 import { format } from 'date-fns';
 import AddFixtureModal from '../components/AddFixtureModal';
+import MergePlayersModal from '../components/MergePlayersModal';
 
 export default function TeamDashboard() {
   const { teamId } = useParams();
   const navigate = useNavigate();
   const [isAddFixtureOpen, setIsAddFixtureOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [view, setView] = useState('fixtures'); // 'fixtures' | 'players'
   const [showLeft, setShowLeft] = useState(false);
   
@@ -233,7 +235,16 @@ export default function TeamDashboard() {
                                 <h2 className="font-bold flex items-center gap-2">
                                     <Users size={18} className="text-green-400" /> Players ({displayedPlayers.length})
                                 </h2>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-4">
+                                    <button 
+                                        onClick={() => setIsMergeModalOpen(true)}
+                                        className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded font-medium flex items-center gap-1.5 transition-colors"
+                                        title="Merge duplicate players"
+                                    >
+                                        <GitMerge size={14} /> Merge
+                                    </button>
+                                    <div className="h-4 w-px bg-slate-700"></div>
+
                                     <label className="text-xs text-slate-400 flex items-center gap-2 cursor-pointer select-none">
                                         <input 
                                             type="checkbox" 
@@ -284,6 +295,12 @@ export default function TeamDashboard() {
         isOpen={isAddFixtureOpen} 
         onClose={() => setIsAddFixtureOpen(false)} 
         teamSeasonId={selectedContext?.id}
+      />
+      <MergePlayersModal 
+        isOpen={isMergeModalOpen}
+        onClose={() => setIsMergeModalOpen(false)}
+        players={allPlayers}
+        contextId={selectedContext?.id}
       />
     </div>
   );
