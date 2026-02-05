@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { playerService } from '../services/players';
-import { ArrowLeft, Save, Trash2, Calendar } from 'lucide-react';
+import { spondService } from '../services/spond';
+import { ArrowLeft, Save, Trash2, Calendar, Link as LinkIcon } from 'lucide-react';
 
 export default function PlayerDashboard() {
     const { playerId } = useParams();
@@ -17,7 +18,7 @@ export default function PlayerDashboard() {
             // Assuming getById exists or adding it. For now, filter from a context if needed, 
             // but ideally we add `playerService.getById`.
             // Let's assume we need to add `getById` to frontend service too.
-            const response = await fetch(`/api/db/player/${playerId}`); // Direct fetch for now if service missing
+            const response = await fetch(`/api/players/${playerId}`); // Updated endpoint
             if (!response.ok) throw new Error('Network response was not ok');
             return response.json();
             // TODO: Standardize this into service
@@ -27,8 +28,72 @@ export default function PlayerDashboard() {
     const [formData, setFormData] = useState({
         name: '',
         position: '',
-        left_date: ''
+        left_date: '',
+        spond_id: ''
     });
+    
+    const [spondMembers, setSpondMembers] = useState([]);
+
+    // Fetch Spond Members
+    React.useEffect(() => {
+        if (!playerData?.player) return;
+
+        const loadMembers = async () => {
+            try {
+                // If we know the specific group from the team context, use it.
+                const targetGroupId = playerData.player.team_spond_group_id;
+                
+                if (targetGroupId) {
+                     try {
+                        const { members } = await spondService.getMembers(targetGroupId);
+                        // Get group name for label? We might need to fetch group details or just use generic
+                        // But typically we can just show the members. 
+                        // To get group name we'd need to fetch groups too or just the group.
+                        // Let's being robust: fetch groups to get name map, but only fetch members for target.
+                        const { groups } = await spondService.getGroups();
+                        const group = groups.find(g => g.id === targetGroupId);
+                        const groupName = group ? group.name : 'Team Group';
+
+                        setSpondMembers(members.map(m => ({
+                            id: m.id,
+                            name: `${m.firstName} ${m.lastName}`,
+                            groupName: groupName
+                        })));
+                     } catch (e) {
+                         console.error("Failed to fetch target group members", e);
+                     }
+                } else {
+                    // Fallback: Check all groups if no team link (or show warning?)
+                    // User complained about "all players", so let's maybe default to empty or limited?
+                    // But if it's a new player not in a team yet, "all players" might be useful or confusing.
+                    // Let's keep "all" but maybe grouped better or just warn.
+                    // Actually, the user specifically said "linked with the players team".
+                    // If no team link, maybe show all but it's overwhelming.
+                    // I'll keep the logic but maybe optimize. 
+                    // Wait, the complaint was "only be presented with members from the group that is linked".
+                    // So if there IS a link, do that. If not, maybe show all (legacy behavior).
+                    const { groups } = await spondService.getGroups();
+                    let all = [];
+                    for (const g of groups) {
+                        try {
+                            const { members } = await spondService.getMembers(g.id);
+                            all = [...all, ...members.map(m => ({
+                                id: m.id,
+                                name: `${m.firstName} ${m.lastName}`,
+                                groupName: g.name
+                            }))];
+                        } catch (e) {
+                             console.warn(`Failed to load members for group ${g.id}`, e);
+                        }
+                    }
+                    setSpondMembers(all);
+                }
+            } catch (e) {
+                console.error("Failed to load Spond data", e);
+            }
+        };
+        loadMembers();
+    }, [playerData]);
 
     // Populate form
     React.useEffect(() => {
@@ -36,7 +101,8 @@ export default function PlayerDashboard() {
             setFormData({
                 name: playerData.player.name || '',
                 position: playerData.player.position || '',
-                left_date: playerData.player.left_date || ''
+                left_date: playerData.player.left_date || '',
+                spond_id: playerData.player.spond_id || ''
             });
         }
     }, [playerData]);
@@ -44,7 +110,7 @@ export default function PlayerDashboard() {
     const updateMutation = useMutation({
         mutationFn: async (data) => {
             // Service call
-            const res = await fetch(`/api/db/player/${playerId}`, {
+            const res = await fetch(`/api/players/${playerId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -100,6 +166,25 @@ export default function PlayerDashboard() {
                                 onChange={e => setFormData({...formData, position: e.target.value})}
                                 className="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                             />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-slate-400 mb-1 flex items-center gap-2">
+                                <LinkIcon size={14} className="text-blue-500"/> Spond Member
+                            </label>
+                            <select 
+                                value={formData.spond_id}
+                                onChange={e => setFormData({...formData, spond_id: e.target.value})}
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500 appearance-none"
+                            >
+                                <option value="">No Link</option>
+                                {spondMembers.map(m => (
+                                    <option key={m.id} value={m.id}>
+                                        {m.name} ({m.groupName})
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-slate-500 mt-1">Link this player to a Spond member to sync availability.</p>
                         </div>
                         
                         <div className="pt-4 border-t border-slate-700">

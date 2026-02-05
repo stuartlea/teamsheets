@@ -1,5 +1,5 @@
 
-from models import db, Player, Match, Availability, TeamSelection, TeamSeason, MatchFormat
+from models import db, Player, Match, Availability, TeamSelection, TeamSeason, MatchFormat, PlayerAlias
 from datetime import datetime
 
 class SyncService:
@@ -123,7 +123,16 @@ class SyncService:
                     continue
                 
                 # Create or Update Player (Global)
+                # Create or Update Player (Global)
                 player = Player.query.filter_by(name=player_name).first()
+                
+                # Check for Alias if direct match not found
+                if not player:
+                    alias = PlayerAlias.query.filter_by(name=player_name).first()
+                    if alias:
+                        player = alias.player
+                        # print(f"Found Alias: {player_name} -> {player.name}")
+
                 if not player:
                     player = Player(name=player_name)
                     print(f"Creating Player: {player_name}")
@@ -276,6 +285,11 @@ class SyncService:
                          
                          if player_name and player_name.strip():
                              player = Player.query.filter_by(name=player_name.strip()).first()
+                             
+                             if not player:
+                                 alias = PlayerAlias.query.filter_by(name=player_name.strip()).first()
+                                 if alias: player = alias.player
+
                              # Auto-create player if simple batch sync? 
                              # Batch sync implies we ran sync_players first, but let's be safe
                              if not player:
@@ -300,6 +314,11 @@ class SyncService:
                          
                          if player_name and player_name.strip():
                              player = Player.query.filter_by(name=player_name.strip()).first()
+                             
+                             if not player:
+                                 alias = PlayerAlias.query.filter_by(name=player_name.strip()).first()
+                                 if alias: player = alias.player
+
                              if not player:
                                  player = Player(name=player_name.strip())
                                  db.session.add(player)
@@ -418,6 +437,10 @@ class SyncService:
                      if player_name and player_name.strip():
                          player = Player.query.filter_by(name=player_name.strip()).first()
                          if not player:
+                             alias = PlayerAlias.query.filter_by(name=player_name.strip()).first()
+                             if alias: player = alias.player
+
+                         if not player:
                              player = Player(name=player_name.strip())
                              db.session.add(player)
                              db.session.flush()
@@ -439,6 +462,10 @@ class SyncService:
                      
                      if player_name and player_name.strip():
                          player = Player.query.filter_by(name=player_name.strip()).first()
+                         if not player:
+                             alias = PlayerAlias.query.filter_by(name=player_name.strip()).first()
+                             if alias: player = alias.player
+
                          if not player:
                              player = Player(name=player_name.strip())
                              db.session.add(player)

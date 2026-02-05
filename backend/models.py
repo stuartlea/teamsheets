@@ -69,7 +69,9 @@ class Team(db.Model):
     """Represents a rugby team category (e.g. U15s, Men's 1st XV)"""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+
     logo_url = db.Column(db.String(255), nullable=True)
+    spond_group_id = db.Column(db.String(100), nullable=True) # Spond Group ID
     
     # Relationships
     team_seasons = db.relationship('TeamSeason', backref='team', lazy=True)
@@ -82,7 +84,9 @@ class Team(db.Model):
         return {
             'id': self.id,
             'name': self.name,
-            'logo_url': self.logo_url
+
+            'logo_url': self.logo_url,
+            'spond_group_id': self.spond_group_id
         }
 
 class Season(db.Model):
@@ -182,8 +186,21 @@ class Player(db.Model):
             'is_back': self.is_back,
             'spond_id': self.spond_id,
             'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
-            'left_date': self.left_date.isoformat() if self.left_date else None
+            'left_date': self.left_date.isoformat() if self.left_date else None,
+            'aliases': [a.name for a in self.aliases]
         }
+
+class PlayerAlias(db.Model):
+    """Maps alternative names (e.g. from merges) to a canonical Player ID"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+    
+    # Relationships
+    player = db.relationship('Player', backref=db.backref('aliases', lazy=True))
+
+    def __repr__(self):
+        return f'<PlayerAlias {self.name} -> {self.player.name}>'
 
 class Match(db.Model):
     """Stores match/fixture data linked to a specific TeamSeason"""
@@ -208,7 +225,12 @@ class Match(db.Model):
     kickoff_time = db.Column(db.String(20), nullable=True)
     meet_time = db.Column(db.String(20), nullable=True)
     location = db.Column(db.String(200), nullable=True)
+
     is_cancelled = db.Column(db.Boolean, default=False)
+    
+    # Spond Integration
+    spond_event_id = db.Column(db.String(100), nullable=True)
+    spond_availability_id = db.Column(db.String(100), nullable=True)
     
     # Relationships
     format = db.relationship('MatchFormat', backref='matches', lazy=True)
@@ -229,7 +251,10 @@ class Match(db.Model):
             'kickoff_time': self.kickoff_time,
             'meet_time': self.meet_time,
             'location': self.location,
+
             'is_cancelled': self.is_cancelled,
+            'spond_event_id': self.spond_event_id,
+            'spond_availability_id': self.spond_availability_id,
             'is_manual': self.is_manual,
             'format_id': self.format_id,
             'format_name': self.format.name if self.format else None,
@@ -238,7 +263,8 @@ class Match(db.Model):
                 'home': self.result_home_score,
                 'away': self.result_away_score
             } if self.result_home_score is not None else None,
-            'scorers': self.scorers
+            'scorers': self.scorers,
+            'team_spond_group_id': self.team_season.team.spond_group_id if self.team_season and self.team_season.team else None
         }
 
 class Availability(db.Model):
@@ -248,6 +274,10 @@ class Availability(db.Model):
     player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
     status = db.Column(db.String(50), nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Spond Sync
+    spond_status = db.Column(db.String(100), nullable=True) # e.g. "ACCEPTED", "DECLINED", "UNANSWERED"
+    spond_last_updated = db.Column(db.DateTime, nullable=True)
 
     def __repr__(self):
         return f'<Availability {self.player.name} - {self.match.name}: {self.status}>'

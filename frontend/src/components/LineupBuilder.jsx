@@ -105,7 +105,10 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
         const map = {};
         if (availabilityData?.availability) {
             availabilityData.availability.forEach(a => {
-                map[a.player_id] = a.status;
+                map[a.player_id] = { 
+                    status: a.status, 
+                    spond_status: a.spond_status 
+                };
             });
         }
         return map;
@@ -113,15 +116,18 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
 
     const squad = rosterData?.players || [];
     
-    // Filter Squad: Only show Available players + players already selected in grid
-    // This allows us to see everyone who *can* play, plus anyone somehow forced into the selection.
+    // Filter Squad: Only show players with 'Selected' status + players already in grid
     const availableSquad = squad.filter(p => {
-        const status = availabilityMap[p.id];
-        // Include if explicitly available OR if checking/blank (optional policy)
-        // For now, STRICT availability based on user request "only show selected players" (meaning available)
-        // Adjust logic: Only 'Available'
-        if (status === 'Available') return true;
+        if (['#N/A', '0', ''].includes(p.name)) return false;
+        if (p.left_date) return false;
+
+        // Check Status
+        const data = availabilityMap[p.id];
+        const status = (data?.status || '').toLowerCase();
+        const isSelected = status.includes('selected') && !status.includes('not');
         
+        if (isSelected) return true;
+
         // Also include if currently in the lineup (to prevent them disappearing)
         const inLineup = Object.values(lineupGrid).some(periodPositions => 
             Object.values(periodPositions).includes(p.id)
@@ -129,7 +135,29 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
         if (inLineup) return true;
 
         return false;
+    }).sort((a, b) => {
+        // Sort: Alphabetical
+        return a.name.localeCompare(b.name);
     });
+
+    const getValidation = (period, playerId) => {
+        if (!playerId) return null;
+
+        // Check Duplicates in this period
+        const periodPlayers = Object.values(lineupGrid[period] || {});
+        // Count occurrences (converted to strings for safety)
+        const count = periodPlayers.filter(id => String(id) === String(playerId)).length;
+        const isDuplicate = count > 1;
+
+        // Check Spond Status
+        const data = availabilityMap[playerId];
+        const spondStatus = data?.spond_status || '';
+        const isSpondInvalid = spondStatus.toLowerCase() !== 'attending';
+
+        if (!isDuplicate && !isSpondInvalid) return null;
+
+        return { isDuplicate, isSpondInvalid, spondStatus };
+    };
 
     return (
         <div className="space-y-6">
@@ -153,25 +181,59 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
                                 <td className="p-3 border-b border-slate-700/50 bg-slate-800 sticky left-0 font-mono text-center text-slate-500 font-bold border-r border-slate-700">
                                     {pos}
                                 </td>
-                                {Array.from({ length: periodsCount }, (_, i) => i + 1).map(p => (
-                                    <td key={p} className="p-2 border-b border-r border-slate-700/50">
-                                        <select
-                                            className={clsx(
-                                                "w-full bg-slate-900/50 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer",
-                                                !lineupGrid[p]?.[pos] && "text-slate-500 italic"
-                                            )}
-                                            value={lineupGrid[p]?.[pos] || ''}
-                                            onChange={(e) => handleCellChange(p, pos, e.target.value)}
-                                        >
-                                            <option value="">-- Unassigned --</option>
-                                            {availableSquad.map(player => (
-                                                <option key={player.id} value={player.id}>
-                                                    {player.name} {availabilityMap[player.id] !== 'Available' ? `(${availabilityMap[player.id] || '?'})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </td>
-                                ))}
+                                {Array.from({ length: periodsCount }, (_, i) => i + 1).map(p => {
+                                    const selectedPlayerId = lineupGrid[p]?.[pos];
+                                    const validation = getValidation(p, selectedPlayerId);
+                                    
+                                    return (
+                                        <td key={p} className="p-2 border-b border-r border-slate-700/50 relative">
+                                            <div className="relative">
+                                                <select
+                                                    className={clsx(
+                                                        "w-full bg-slate-900/50 border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer",
+                                                        !selectedPlayerId && "text-slate-500 italic",
+                                                        validation ? (validation.isDuplicate ? "border-red-500 bg-red-900/10" : "border-amber-500/50") : "border-slate-700"
+                                                    )}
+                                                    value={selectedPlayerId || ''}
+                                                    onChange={(e) => handleCellChange(p, pos, e.target.value)}
+                                                >
+                                                    <option value="">-- Unassigned --</option>
+                                                    {availableSquad.map(player => (
+                                                        <option key={player.id} value={player.id}>
+                                                            {player.name} {availabilityMap[player.id]?.status !== 'Available' ? `(${availabilityMap[player.id]?.status || '?'})` : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                
+                                                {/* Validation Indicators */}
+                                                {validation && (
+                                                    <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                                                        {validation.isDuplicate && (
+                                                            <div className="group/tooltip relative">
+                                                                <AlertCircle size={14} className="text-red-500 animate-pulse" />
+                                                            </div>
+                                                        )}
+                                                         {validation.isSpondInvalid && !validation.isDuplicate && (
+                                                             <div className="group/tooltip relative">
+                                                                 <AlertCircle size={14} className="text-amber-500" />
+                                                             </div>
+                                                         )}
+                                                    </div>
+                                                )}
+                                                
+                                                 {/* Tooltip on hover of container */}
+                                                {validation && (
+                                                     <div className="absolute z-50 invisible group-hover:visible bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 border border-slate-700 text-white text-xs rounded shadow-xl whitespace-nowrap">
+                                                         {validation.isDuplicate && <div className="text-red-400 font-bold">⚠️ Selected twice in this period</div>}
+                                                         {validation.isSpondInvalid && <div className="text-amber-400">Spond: {validation.spondStatus || 'Unknown'}</div>}
+                                                         {/* Arrow */}
+                                                         <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-700"></div>
+                                                     </div>
+                                                )}
+                                            </div>
+                                        </td>
+                                    );
+                                })}
                             </tr>
                         ))}
                     </tbody>

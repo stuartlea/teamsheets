@@ -2,8 +2,9 @@ import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { playerService } from '../services/players';
 import { fixtureService } from '../services/fixtures';
-import { Check, X, AlertCircle, Ban, Stethoscope, HelpCircle, Clock, ShieldAlert } from 'lucide-react';
+import { Check, X, AlertCircle, Ban, Stethoscope, HelpCircle, Clock, ShieldAlert, Smartphone } from 'lucide-react';
 import clsx from 'clsx';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function AvailabilityTab({ match }) {
     const queryClient = useQueryClient();
@@ -22,12 +23,12 @@ export default function AvailabilityTab({ match }) {
         queryFn: () => fixtureService.getAvailability(match.id)
     });
 
-    // Map: PlayerID -> Status
+    // Map: PlayerID -> Availability Data
     const availabilityMap = React.useMemo(() => {
         const map = {};
         if (availabilityData?.availability) {
             availabilityData.availability.forEach(a => {
-                map[a.player_id] = a.status;
+                map[a.player_id] = a;
             });
         }
         return map;
@@ -52,7 +53,8 @@ export default function AvailabilityTab({ match }) {
         const players = rosterData?.players || [];
         const map = availabilityMap;
         players.forEach(p => {
-             const s = map[p.id] || 'Unknown';
+             const data = map[p.id];
+             const s = data ? data.status : 'Unknown';
              if (s) statuses.add(s);
         });
         return Array.from(statuses).sort().map(s => ({
@@ -79,9 +81,10 @@ export default function AvailabilityTab({ match }) {
         // Search Filter
         if (searchTerm && !p.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
         
-        // Status Filter (Multi-select Exact Match)
+        // Status Filter (Multi-select Exact Match on Selection Status)
         if (statusFilters.length > 0) {
-            const status = availabilityMap[p.id] || 'Unknown';
+            const data = availabilityMap[p.id];
+            const status = data ? data.status : 'Unknown';
             if (!statusFilters.includes(status)) return false;
         }
         return true;
@@ -89,34 +92,39 @@ export default function AvailabilityTab({ match }) {
 
     // 2. Sort
     const sortedSquad = filteredSquad.sort((a, b) => {
-        const statA = (availabilityMap[a.id] || 'Unknown');
-        const statB = (availabilityMap[b.id] || 'Unknown');
+        const dataA = availabilityMap[a.id] || {};
+        const dataB = availabilityMap[b.id] || {};
+        const statA = dataA.status || 'Unknown';
+        const statB = dataB.status || 'Unknown';
+        const spondA = dataA.spond_status || 'Unknown';
+        const spondB = dataB.spond_status || 'Unknown';
         
         let valA, valB;
         
         if (sortConfig.key === 'name') {
             valA = a.name.toLowerCase();
             valB = b.name.toLowerCase();
+        } else if (sortConfig.key === 'spond') {
+             valA = spondA.toLowerCase();
+             valB = spondB.toLowerCase();
+             // Priority for Attending
+             const pA = valA === 'attending' ? 0 : (valA === 'declined' ? 2 : 1);
+             const pB = valB === 'attending' ? 0 : (valB === 'declined' ? 2 : 1);
+             if (pA !== pB) return pA - pB;
         } else {
             // Sort by Status Text
             valA = statA.toLowerCase();
             valB = statB.toLowerCase();
             
-            // Optional: Keep specific statuses at top?
-            // User asked for "sorting works", implied alphabetical might be safest "works" interpretation
-            // But usually "Available" is better at top.
-            // Let's implement a simple priority map for common ones, alphabetical for rest.
             const priority = { 
                 'selected': 0, 'available': 1, 'checking': 2 
             };
             const pA = priority[valA] !== undefined ? priority[valA] : 99;
             const pB = priority[valB] !== undefined ? priority[valB] : 99;
             
-            // If both have priority, compare priority
             if (pA !== 99 || pB !== 99) {
                  if (pA !== pB) return pA - pB;
             }
-            // Otherwise alphabetical
         }
 
         if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -164,6 +172,14 @@ export default function AvailabilityTab({ match }) {
         return <HelpCircle size={14} />;
     };
 
+    const getSpondStatusColor = (status) => {
+        const s = (status || '').toLowerCase();
+        if (s === 'attending') return 'text-green-400 bg-green-400/10 border-green-500/30';
+        if (s === 'declined') return 'text-red-400 bg-red-400/10 border-red-500/30';
+        if (s === 'unanswered' || s === 'invited') return 'text-amber-400 bg-amber-400/10 border-amber-500/30';
+        return 'text-slate-500 bg-slate-800 border-slate-700';
+    };
+
     return (
         <div className="space-y-6">
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -171,11 +187,11 @@ export default function AvailabilityTab({ match }) {
                     <div className="flex items-center gap-4">
                         <h3 className="font-bold text-white">Squad Availability</h3>
                         <div className="flex gap-2">
-                            <span className="text-xs px-2 py-1 rounded bg-amber-900/20 text-amber-400 border border-amber-900/30">
-                                {Object.values(availabilityMap).filter(s => (s||'').toLowerCase().includes('available')).length} Avail
+                             <span className="text-xs px-2 py-1 rounded bg-amber-900/20 text-amber-400 border border-amber-900/30">
+                                {Object.values(availabilityMap).filter(d => (d?.status||'').toLowerCase().includes('available')).length} Avail
                             </span>
                             <span className="text-xs px-2 py-1 rounded bg-green-900/20 text-green-400 border border-green-900/30">
-                                {Object.values(availabilityMap).filter(s => (s||'').toLowerCase().includes('selected') && !(s||'').toLowerCase().includes('not')).length} Sel
+                                {Object.values(availabilityMap).filter(d => (d?.status||'').toLowerCase().includes('selected') && !(d?.status||'').toLowerCase().includes('not')).length} Sel
                             </span>
                         </div>
                     </div>
@@ -237,16 +253,31 @@ export default function AvailabilityTab({ match }) {
                             </th>
                             <th 
                                 className="p-4 cursor-pointer hover:text-white transition-colors select-none"
+                                onClick={() => handleSort('spond')}
+                            >
+                                Spond Status {sortConfig.key === 'spond' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </th>
+                            <th 
+                                className="p-4 cursor-pointer hover:text-white transition-colors select-none"
                                 onClick={() => handleSort('status')}
                             >
-                                Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                Selection Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                             </th>
                             <th className="p-4 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
                         {sortedSquad.map(player => {
-                            const status = availabilityMap[player.id] || 'Unknown';
+                            const data = availabilityMap[player.id] || {};
+                            const status = data.status || 'Unknown';
+                            const spondStatus = data.spond_status;
+                            const spondUpdated = data.spond_last_updated ? new Date(data.spond_last_updated) : null;
+
+                            const isSelectedInSheet = (status || '').toLowerCase().includes('selected') && !(status || '').toLowerCase().includes('not');
+                            const isSpondAttending = (spondStatus || '').toLowerCase() === 'attending';
+                            // Flag if Selected in Sheet but NOT Attending in Spond (and Spond status exists)
+                            const isConflict = isSelectedInSheet && spondStatus && !isSpondAttending;
+
                             return (
                                 <tr key={player.id} className="hover:bg-slate-700/30 transition-colors">
                                     <td className="p-4">
@@ -254,9 +285,34 @@ export default function AvailabilityTab({ match }) {
                                         <div className="text-xs text-slate-500">{player.position || 'Unknown Pos'}</div>
                                     </td>
                                     <td className="p-4">
-                                        <span className={clsx("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border", getStatusColor(status))}>
-                                            {getStatusIcon(status)} {status}
-                                        </span>
+                                        {spondStatus ? (
+                                            <div className="flex flex-col items-start gap-1">
+                                                <span className={clsx("inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-xs font-medium capitalize", getSpondStatusColor(spondStatus))}>
+                                                    {spondStatus === 'attending' && <Check size={12} />}
+                                                    {spondStatus === 'declined' && <X size={12} />}
+                                                    {spondStatus}
+                                                </span>
+                                                {spondUpdated && (
+                                                     <span className="text-[10px] text-slate-500">
+                                                        {formatDistanceToNow(spondUpdated, {addSuffix: true})}
+                                                     </span>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-slate-600 text-xs italic">No data</span>
+                                        )}
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="flex flex-col items-start gap-1">
+                                            <span className={clsx("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border", getStatusColor(status))}>
+                                                {getStatusIcon(status)} {status}
+                                            </span>
+                                            {isConflict && (
+                                                <span className="text-red-400 text-[10px] flex items-center gap-1 font-bold animate-pulse">
+                                                    <AlertCircle size={10} /> Check Spond
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="p-4 text-right">
                                         <button className="text-slate-400 hover:text-white text-xs underline">

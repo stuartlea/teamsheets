@@ -4,16 +4,21 @@ import { useQuery } from '@tanstack/react-query';
 import { teamService } from '../services/teams';
 import { seasonService, fixtureService } from '../services/fixtures';
 import { playerService } from '../services/players';
-import { Calendar, Users, Settings, ChevronDown, ListFilter, Shield, GitMerge } from 'lucide-react';
+import { spondService } from '../services/spond';
+import { Calendar, Users, Settings, ChevronDown, ListFilter, Shield, GitMerge, Link as LinkIcon, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import AddFixtureModal from '../components/AddFixtureModal';
 import MergePlayersModal from '../components/MergePlayersModal';
+import EditTeamModal from '../components/EditTeamModal';
+import LinkSpondPlayersModal from '../components/LinkSpondPlayersModal';
 
 export default function TeamDashboard() {
   const { teamId } = useParams();
   const navigate = useNavigate();
   const [isAddFixtureOpen, setIsAddFixtureOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [isEditTeamOpen, setIsEditTeamOpen] = useState(false);
+  const [isLinkPlayersOpen, setIsLinkPlayersOpen] = useState(false);
   const [view, setView] = useState('fixtures'); // 'fixtures' | 'players'
   const [showLeft, setShowLeft] = useState(false);
   
@@ -60,6 +65,15 @@ export default function TeamDashboard() {
       enabled: !!selectedContext
   });
 
+  // 5. Fetch Spond Members for validation
+  const { data: spondMembersData } = useQuery({
+      queryKey: ['spondMembers', team?.spond_group_id],
+      queryFn: () => spondService.getMembers(team.spond_group_id),
+      enabled: !!team?.spond_group_id
+  });
+
+  const spondMemberIds = new Set(spondMembersData?.members?.map(m => m.id) || []);
+
   const fixtures = fixtureData?.fixtures || [];
   
   // Filter Players
@@ -83,6 +97,14 @@ export default function TeamDashboard() {
              <Link to="/admin" className="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-1">
                  <Settings size={14} /> Admin
              </Link>
+
+             <button 
+                onClick={() => setIsEditTeamOpen(true)}
+                className="text-slate-500 hover:text-blue-400 transition-colors text-sm flex items-center gap-1"
+                title="Edit Team Settings"
+             >
+                 <Settings size={14} /> Edit Team
+             </button>
              <div className="h-6 w-px bg-slate-800"></div>
              <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
@@ -236,6 +258,15 @@ export default function TeamDashboard() {
                                     <Users size={18} className="text-green-400" /> Players ({displayedPlayers.length})
                                 </h2>
                                 <div className="flex items-center gap-4">
+                                    {team?.spond_group_id && (
+                                        <button 
+                                            onClick={() => setIsLinkPlayersOpen(true)}
+                                            className="text-xs bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 border border-blue-800/50 px-3 py-1.5 rounded font-medium flex items-center gap-1.5 transition-colors"
+                                            title="Manage Spond Links"
+                                        >
+                                            <LinkIcon size={14} /> Link Spond
+                                        </button>
+                                    )}
                                     <button 
                                         onClick={() => setIsMergeModalOpen(true)}
                                         className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded font-medium flex items-center gap-1.5 transition-colors"
@@ -262,15 +293,37 @@ export default function TeamDashboard() {
                                 </div>
                             ) : (
                                 <div className="divide-y divide-slate-700">
-                                    {displayedPlayers.map(player => (
+                                    {displayedPlayers.map(player => {
+                                        const isLinked = !!player.spond_id;
+                                        const isValidLink = isLinked && spondMemberIds.has(player.spond_id);
+                                        const isBrokenLink = isLinked && !isValidLink && spondMembersData; // Only show broken if data loaded
+
+                                        return (
                                         <Link 
                                             key={player.id}
                                             to={`/player/${player.id}`}
                                             className={`p-4 hover:bg-slate-750 flex justify-between items-center group cursor-pointer transition-colors ${player.left_date ? 'opacity-50 bg-red-900/10' : ''}`}
                                         >
                                             <div>
-                                                <h3 className={`font-bold transition-colors ${player.left_date ? 'text-red-400' : 'text-white group-hover:text-green-400'}`}>
+                                                <h3 className={`font-bold transition-colors flex items-center gap-2 ${player.left_date ? 'text-red-400' : 'text-white group-hover:text-green-400'}`}>
                                                     {player.name}
+                                                    {/* Spond Status Indicators */}
+                                                    {isValidLink && (
+                                                        <span className="bg-green-500/10 text-green-400 border border-green-500/20 rounded p-0.5" title="Linked to Spond Member">
+                                                            <LinkIcon size={12} />
+                                                        </span>
+                                                    )}
+                                                    {isBrokenLink && (
+                                                        <span className="bg-red-500/10 text-red-400 border border-red-500/20 rounded px-1.5 py-0.5 text-[10px] uppercase font-bold flex items-center gap-1" title="Spond Member Not Found">
+                                                            <LinkIcon size={12} /> Invalid Link
+                                                        </span>
+                                                    )}
+                                                    {!isLinked && !player.left_date && (
+                                                        <span className="bg-red-500/10 text-red-400 border border-red-500/20 rounded p-0.5" title="Not Linked to Spond">
+                                                            <AlertCircle size={12} />
+                                                        </span>
+                                                    )}
+
                                                     {player.left_date && <span className="text-xs font-normal border border-red-500/50 rounded px-1.5 py-0.5 ml-2 text-red-500 uppercase tracking-wide">Left</span>}
                                                 </h3>
                                                 <p className="text-sm text-slate-500">
@@ -280,7 +333,7 @@ export default function TeamDashboard() {
                                             </div>
                                             <ChevronDown className="text-slate-600 -rotate-90" />
                                         </Link>
-                                    ))}
+                                    )})}
                                 </div>
                             )}
                         </>
@@ -301,6 +354,17 @@ export default function TeamDashboard() {
         onClose={() => setIsMergeModalOpen(false)}
         players={allPlayers}
         contextId={selectedContext?.id}
+      />
+      <LinkSpondPlayersModal
+        isOpen={isLinkPlayersOpen}
+        onClose={() => setIsLinkPlayersOpen(false)}
+        team={team}
+        players={allPlayers}
+      />
+      <EditTeamModal 
+        isOpen={isEditTeamOpen}
+        onClose={() => setIsEditTeamOpen(false)}
+        team={team}
       />
     </div>
   );

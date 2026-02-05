@@ -8,6 +8,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_cors import CORS
 from services.sheets_service import SheetsService
 from services.oauth_service import OAuthService
+from services.spond_service import SpondService
 import os
 from dotenv import load_dotenv
 from datetime import datetime
@@ -53,6 +54,7 @@ with app.app_context():
 # Initialize services
 sheets_service = SheetsService()
 oauth_service = OAuthService()
+spond_service = SpondService()
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -273,6 +275,8 @@ def update_team(team_id):
         data = request.json
         team.name = data.get('name', team.name)
         team.logo_url = data.get('logo_url', team.logo_url)
+        if 'spond_group_id' in data:
+            team.spond_group_id = data['spond_group_id']
         db.session.commit()
         return jsonify({'success': True, 'team': team.to_dict()})
 
@@ -360,18 +364,25 @@ def manage_players():
         db.session.commit()
         return jsonify({'success': True, 'player': player.to_dict()})
 
-@app.route('/api/db/player/<int:player_id>', methods=['GET'])
-def get_player(player_id):
-    """Get single player details"""
-    try:
-        player = Player.query.get_or_404(player_id)
-        return jsonify({'success': True, 'player': player.to_dict()})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/players/<int:p_id>', methods=['PUT', 'DELETE'])
+
+@app.route('/api/players/<int:p_id>', methods=['GET', 'PUT', 'DELETE'])
 def manage_player_item(p_id):
     player = Player.query.get_or_404(p_id)
+    
+    if request.method == 'GET':
+        data = player.to_dict()
+        
+        # Attempt to find the player's primary team context (via most recent selection)
+        # This is a heuristic since Player is global.
+        last_selection = TeamSelection.query.filter_by(player_id=player.id).order_by(TeamSelection.id.desc()).first()
+        if last_selection and last_selection.match and last_selection.match.team_season:
+             data['team_spond_group_id'] = last_selection.match.team_season.team.spond_group_id
+        else:
+             # Fallback: check if we can infer from other sources or just None
+             data['team_spond_group_id'] = None
+             
+        return jsonify({'success': True, 'player': data})
     
     if request.method == 'DELETE':
         db.session.delete(player)
@@ -384,6 +395,15 @@ def manage_player_item(p_id):
         player.position = data.get('position', player.position)
         if 'is_forward' in data: player.is_forward = data['is_forward']
         if 'is_back' in data: player.is_back = data['is_back']
+        if 'left_date' in data: 
+             # Handle date parsing if needed, or assume string iso
+             ld = data['left_date']
+             if ld:
+                 player.left_date = datetime.strptime(ld, '%Y-%m-%d').date()
+             else:
+                 player.left_date = None
+        
+        if 'spond_id' in data: player.spond_id = data['spond_id']
         
         db.session.commit()
         return jsonify({'success': True, 'player': player.to_dict()})
@@ -423,6 +443,19 @@ def merge_players():
                 db.session.delete(avail)
             else:
                 avail.player_id = target_id
+        
+        # 3. Create Alias for Source Player Name
+        from models import PlayerAlias
+        new_alias = PlayerAlias(name=source_player.name, player_id=target_id)
+        db.session.add(new_alias)
+
+        # 4. Re-parent existing aliases of the source player
+        # (If source player was previously the target of other merges)
+        # Note: We need to query this before deleting source_player, although the relationship handles it in memory usually.
+        # But to be safe, let's query.
+        existing_aliases = PlayerAlias.query.filter_by(player_id=source_id).all()
+        for alias in existing_aliases:
+            alias.player_id = target_id
         
         # 3. Delete Source Player
         db.session.delete(source_player)
@@ -577,7 +610,10 @@ def get_match_details(match_id):
             'is_cancelled': m.is_cancelled,
             'team_season_id': m.team_season_id,
             'format': m.format.to_dict() if m.format else None,
-            'opponent_name': m.opponent_name
+            'opponent_name': m.opponent_name,
+            'spond_event_id': m.spond_event_id,
+            'spond_availability_id': m.spond_availability_id,
+            'team_spond_group_id': m.team_season.team.spond_group_id if m.team_season and m.team_season.team else None
         }
         return jsonify({
             'success': True, 
@@ -797,8 +833,10 @@ def manage_match_team(match_id):
         fixture_info = {
             'home_away': match.home_away,
             'match_date': match.date.strftime('%d/%m/%Y') if match.date else '',
+            'match_date_iso': match.date.isoformat() if match.date else '',
             'is_cancelled': match.is_cancelled,
-            'opponent_name': match.opponent_name
+            'opponent_name': match.opponent_name,
+            'team_name': match.team_season.team.name if match.team_season and match.team_season.team else 'Team'
         }
         
         metadata = {}
@@ -840,7 +878,9 @@ def get_match_availability(match_id):
             result.append({
                 'player_id': a.player_id,
                 'name': a.player.name,
-                'status': a.status
+                'status': a.status,
+                'spond_status': a.spond_status,
+                'spond_last_updated': a.spond_last_updated.isoformat() if a.spond_last_updated else None
             })
             
         return jsonify({'success': True, 'availability': result})
@@ -861,6 +901,7 @@ def get_db_players():
                 'name': p.name,
                 'caps': caps,
                 'position': p.position,
+                'spond_id': p.spond_id,
                 'left_date': p.left_date.isoformat() if p.left_date else None
             })
         return jsonify({'success': True, 'players': result})
@@ -925,6 +966,127 @@ def get_current_user():
         user_data['permissions'] = permissions
         return jsonify({'authenticated': True, 'user': user_data})
     return jsonify({'authenticated': False})
+
+
+# --- Spond Integration APIs ---
+
+@app.route('/api/spond/groups')
+def get_spond_groups():
+    groups = spond_service.get_groups()
+    return jsonify({'success': True, 'groups': groups})
+
+@app.route('/api/spond/events', methods=['GET'])
+def get_spond_events():
+    group_id = request.args.get('groupId')
+    if not group_id:
+        return jsonify({'success': False, 'error': 'groupId required'}), 400
+    events = spond_service.get_events(group_id)
+    return jsonify({'success': True, 'events': events})
+
+@app.route('/api/spond/members', methods=['GET'])
+def get_spond_members():
+    group_id = request.args.get('groupId')
+    if not group_id:
+        # Try to find group from context if possible, or just fail
+        return jsonify({'success': False, 'error': 'groupId required'}), 400
+    members = spond_service.get_group_members(group_id)
+    return jsonify({'success': True, 'members': members})
+
+@app.route('/api/teams/<int:team_id>/link-spond', methods=['POST'])
+def link_team_spond(team_id):
+    team = Team.query.get_or_404(team_id)
+    data = request.json
+    team.spond_group_id = data.get('spond_group_id')
+    db.session.commit()
+    return jsonify({'success': True, 'team': team.to_dict()})
+
+@app.route('/api/players/<int:player_id>/link-spond', methods=['POST'])
+def link_player_spond(player_id):
+    player = Player.query.get_or_404(player_id)
+    data = request.json
+    player.spond_id = data.get('spond_id')
+    db.session.commit()
+    return jsonify({'success': True, 'player': player.to_dict()})
+
+@app.route('/api/matches/<int:match_id>/link-spond', methods=['POST'])
+def link_match_spond(match_id):
+    match = Match.query.get_or_404(match_id)
+    data = request.json
+    if 'spond_event_id' in data:
+        match.spond_event_id = data['spond_event_id']
+    if 'spond_availability_id' in data:
+        match.spond_availability_id = data['spond_availability_id']
+    db.session.commit()
+    return jsonify({'success': True, 'match': match.to_dict()})
+
+@app.route('/api/matches/<int:match_id>/spond-sync', methods=['POST'])
+def sync_spond_availability(match_id):
+    match = Match.query.get_or_404(match_id)
+    
+    # Prioritize availability request ID, fallback to event ID
+    target_id = match.spond_availability_id or match.spond_event_id
+    
+    if not target_id:
+        return jsonify({'success': False, 'error': 'Match not linked to Spond event or availability request'}), 400
+        
+    event = spond_service.get_event(target_id)
+    if not event:
+        return jsonify({'success': False, 'error': 'Failed to fetch Spond data'}), 500
+        
+    updated = 0
+    responses = event.get('responses', [])
+    print(f"DEBUG Spond Sync: responses type: {type(responses)}")
+    print(f"DEBUG Spond Sync: responses content: {responses}")
+
+    if isinstance(responses, dict):
+        # Iterate over statuses
+        key_map = {
+            'acceptedIds': 'attending',
+            'declinedIds': 'declined',
+            'unansweredIds': 'unanswered',
+            'waitingListIds': 'waiting',
+            'availableIds': 'available' 
+        }
+        
+        for key, items in responses.items():
+            if not isinstance(items, list): continue
+            
+            # Map the key to a clean status (or use key if not found, stripping 'Ids' suffix as fallback)
+            status = key_map.get(key, key.replace('Ids', ''))
+
+            for item in items:
+                member_id = None
+                if isinstance(item, str):
+                    member_id = item
+                elif isinstance(item, dict):
+                    member_id = item.get('memberId') or item.get('id')
+                
+                if member_id:
+                     _update_player_availability(match, member_id, status)
+                     updated += 1
+                     
+    elif isinstance(responses, list):
+         # Legacy or flat list structure
+         for resp in responses:
+            member_id = resp.get('memberId')
+            status = resp.get('status')
+            if member_id:
+                _update_player_availability(match, member_id, status)
+                updated += 1
+
+    db.session.commit()
+    return jsonify({'success': True, 'updated': updated})
+
+def _update_player_availability(match, member_id, status):
+    player = Player.query.filter_by(spond_id=member_id).first()
+    if player:
+        avail = Availability.query.filter_by(match_id=match.id, player_id=player.id).first()
+        if not avail:
+            avail = Availability(match_id=match.id, player_id=player.id)
+            db.session.add(avail)
+        
+        avail.spond_status = status
+        avail.spond_last_updated = datetime.utcnow()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

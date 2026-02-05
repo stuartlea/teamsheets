@@ -15,4 +15,7 @@ export const teamService = {
 
   // Delete a team
   delete: (id) => api.delete(`/teams/${id}`),
+
+  // Link to Spond Group
+  linkSpond: (teamId, spondGroupId) => api.post(`/teams/${teamId}/link-spond`, { spond_group_id: spondGroupId })
 };

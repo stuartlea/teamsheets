@@ -157,7 +157,11 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                 }
             });
             const link = document.createElement('a');
-            link.download = `team-sheet-${teamData?.fixture_info?.opponent || 'export'}.png`;
+            const meta = teamData?.fixture_info || {};
+            const teamName = (meta.team_name || 'Team').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+            const opponentName = (meta.opponent_name || 'Opponent').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+            const dateStr = meta.match_date_iso || 'date';
+            link.download = `${teamName}-vs-${opponentName}-${dateStr}.png`;
             link.href = dataUrl;
             link.click();
         } catch (err) {
