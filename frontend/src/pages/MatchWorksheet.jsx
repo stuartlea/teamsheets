@@ -12,6 +12,7 @@ import LinkSpondEventModal from '../components/LinkSpondEventModal';
 import { spondService } from '../services/spond';
 
 import MatchDetailsForm from '../components/MatchDetailsForm';
+import MatchResultForm from '../components/MatchResultForm';
 
 export default function MatchWorksheet() {
   const { matchId } = useParams();
@@ -26,7 +27,7 @@ export default function MatchWorksheet() {
     queryFn: () => fixtureService.getById(matchId)
   });
 
-  const match = matchData?.match;
+  const match = matchData;
   const queryClient = useQueryClient();
 
   const updateMatchMutation = useMutation({
@@ -54,7 +55,7 @@ export default function MatchWorksheet() {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = {
-        kickoff: formData.get('kickoff'),
+        kickoff_time: formData.get('kickoff'),
         meet_time: formData.get('meet_time'),
         location: formData.get('location'),
         opponent_name: formData.get('opponent_name')
@@ -104,8 +105,16 @@ export default function MatchWorksheet() {
                         <MapPin size={14} />
                         {match.location || 'Location TBD'}
                     </span>
-                     <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${match.home_away === 'Home' ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'}`}>
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${match.home_away === 'Home' ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'}`}>
                         {match.home_away || 'Home'}
+                    </span>
+                    {match.is_cancelled && (
+                        <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-red-900 text-red-300 flex items-center gap-1">
+                            <AlertCircle size={10} /> Cancelled
+                        </span>
+                    )}
+                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                        Source: {match.source || 'Manual'}
                     </span>
                 </div>
             </div>
@@ -124,7 +133,7 @@ export default function MatchWorksheet() {
       {/* Tabs */}
       <div className="border-b border-slate-800 bg-slate-900/50 px-6">
         <div className="flex gap-6">
-            {['overview', 'lineup', 'availability'].map((tab) => (
+            {['overview', 'lineup', 'availability', 'result'].map((tab) => (
                 <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -230,6 +239,10 @@ export default function MatchWorksheet() {
 
         {activeTab === 'availability' && (
              <AvailabilityTab match={match} />
+        )}
+
+        {activeTab === 'result' && (
+            <MatchResultForm match={match} />
         )}
       </div>
 

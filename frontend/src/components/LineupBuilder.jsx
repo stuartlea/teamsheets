@@ -105,7 +105,9 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
         const map = {};
         if (availabilityData?.availability) {
             availabilityData.availability.forEach(a => {
-                map[a.player_id] = { 
+                // Django returns player_id as an object, so we need to get the actual ID
+                const playerId = a.player?.id || a.player_id?.id || a.player_id;
+                map[playerId] = { 
                     status: a.status, 
                     spond_status: a.spond_status 
                 };
@@ -114,7 +116,7 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
         return map;
     }, [availabilityData]);
 
-    const squad = rosterData?.players || [];
+    const squad = rosterData?.players || rosterData || [];
     
     // Filter Squad: Only show players with 'Selected' status + players already in grid
     const availableSquad = squad.filter(p => {
@@ -140,6 +142,7 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
         return a.name.localeCompare(b.name);
     });
 
+    
     const getValidation = (period, playerId) => {
         if (!playerId) return null;
 
@@ -200,7 +203,7 @@ export default function LineupBuilder({ match, teamSeasonId: propTeamSeasonId })
                                                     <option value="">-- Unassigned --</option>
                                                     {availableSquad.map(player => (
                                                         <option key={player.id} value={player.id}>
-                                                            {player.name} {availabilityMap[player.id]?.status !== 'Available' ? `(${availabilityMap[player.id]?.status || '?'})` : ''}
+                                                            {player.name}
                                                         </option>
                                                     ))}
                                                 </select>

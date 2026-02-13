@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  withCredentials: true,
+  xsrfCookieName: 'csrftoken',
+  xsrfHeaderName: 'X-CSRFToken',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -16,7 +19,7 @@ api.interceptors.response.use(
     
     // Auto-redirect to login on 401
     if (error.response?.status === 401) {
-        window.location.href = '/auth/login';
+        window.location.href = '/login';
     }
     
     return Promise.reject({ message, status: error.response?.status });

@@ -16,7 +16,7 @@ export default function Teams() {
     queryFn: teamService.getAll
   });
   
-  const teams = data?.teams || [];
+  const teams = Array.isArray(data) ? data : data?.teams || [];
 
   // Create Team Mutation
   const createMutation = useMutation({

@@ -5,6 +5,8 @@ import TeamDashboard from './pages/TeamDashboard'
 import MatchWorksheet from './pages/MatchWorksheet'
 import AdminSettings from './pages/AdminSettings';
 import PlayerDashboard from './pages/PlayerDashboard';
+import Login from './pages/Login'
+import Layout from './components/Layout'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -15,20 +17,28 @@ const queryClient = new QueryClient({
   }
 })
 
+import { AuthProvider } from './context/AuthContext'
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-            <Routes>
-                {/* Redirect root to default team/dashboard eventually */}
-                <Route path="/" element={<Navigate to="/team/1" replace />} />
-                <Route path="/teams" element={<Teams />} />
-                <Route path="/team/:teamId" element={<TeamDashboard />} />
-                <Route path="/player/:playerId" element={<PlayerDashboard />} />
-                <Route path="/match/:matchId/*" element={<MatchWorksheet />} />
-                <Route path="/admin" element={<AdminSettings />} />
-            </Routes>
-        </BrowserRouter>
+        <AuthProvider>
+            <BrowserRouter>
+                <Routes>
+                    <Route path="/login" element={<Login />} />
+                    
+                    {/* Authenticated Routes wrapped in Layout */}
+                    <Route element={<Layout />}>
+                        <Route path="/" element={<Navigate to="/teams" replace />} />
+                        <Route path="/teams" element={<Teams />} />
+                        <Route path="/team/:teamId" element={<TeamDashboard />} />
+                        <Route path="/player/:playerId" element={<PlayerDashboard />} />
+                        <Route path="/match/:matchId/*" element={<MatchWorksheet />} />
+                        <Route path="/admin" element={<AdminSettings />} />
+                    </Route>
+                </Routes>
+            </BrowserRouter>
+        </AuthProvider>
     </QueryClientProvider>
   )
 }

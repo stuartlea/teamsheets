@@ -16,8 +16,8 @@ export const spondService = {
   // Link Match to Spond Event
   // Link Match to Spond Event/Availability
   // data: { spond_event_id?, spond_availability_id? }
-  linkMatch: (matchId, data) => api.post(`/matches/${matchId}/link-spond`, data),
+  linkMatch: (matchId, data) => api.post(`/matches/${matchId}/link-spond/`, data),
 
   // Sync Match Availability
-  syncMatch: (matchId) => api.post(`/matches/${matchId}/spond-sync`)
+  syncMatch: (matchId) => api.post(`/matches/${matchId}/spond-sync/`)
 };

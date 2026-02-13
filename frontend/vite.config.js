@@ -13,17 +13,17 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
       },
-      // Proxy static images being served by Flask (for now)
+      // Proxy static images being served by Flask (now Django on 8000)
       '/static': {
-        target: 'http://127.0.0.1:5000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
       '/auth': {
-        target: 'http://127.0.0.1:5000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       }
     }

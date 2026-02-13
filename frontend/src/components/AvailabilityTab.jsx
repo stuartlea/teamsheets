@@ -28,7 +28,9 @@ export default function AvailabilityTab({ match }) {
         const map = {};
         if (availabilityData?.availability) {
             availabilityData.availability.forEach(a => {
-                map[a.player_id] = a;
+                // Django returns player_id as an object, so we need to get the actual ID
+                const playerId = a.player?.id || a.player_id?.id || a.player_id;
+                map[playerId] = a;
             });
         }
         return map;
@@ -64,7 +66,7 @@ export default function AvailabilityTab({ match }) {
 
     if (rosterLoading) return <div className="p-8 text-white">Loading Squad...</div>;
 
-    const squad = rosterData?.players || [];
+    const squad = rosterData?.players || rosterData || [];
     
     // 1. Filter
     const filteredSquad = squad.filter(p => {

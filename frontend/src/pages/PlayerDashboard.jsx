@@ -13,16 +13,7 @@ export default function PlayerDashboard() {
     // Fetch Player
     const { data: playerData, isLoading } = useQuery({
         queryKey: ['player', playerId],
-        queryFn: async () => {
-            // Need a getById endpoint? Or filter from list?
-            // Assuming getById exists or adding it. For now, filter from a context if needed, 
-            // but ideally we add `playerService.getById`.
-            // Let's assume we need to add `getById` to frontend service too.
-            const response = await fetch(`/api/players/${playerId}`); // Updated endpoint
-            if (!response.ok) throw new Error('Network response was not ok');
-            return response.json();
-            // TODO: Standardize this into service
-        }
+        queryFn: () => playerService.getById(playerId)
     });
 
     const [formData, setFormData] = useState({
@@ -36,20 +27,18 @@ export default function PlayerDashboard() {
 
     // Fetch Spond Members
     React.useEffect(() => {
-        if (!playerData?.player) return;
+        if (!playerData) return;
 
         const loadMembers = async () => {
             try {
                 // If we know the specific group from the team context, use it.
-                const targetGroupId = playerData.player.team_spond_group_id;
+                // Note: Django Player model is global, so team_spond_group_id might not be present unless passed or inferred.
+                // Fallback to all groups if not found.
+                const targetGroupId = playerData.team_spond_group_id; // Check if serializer provides this or if we need to fetch it
                 
                 if (targetGroupId) {
                      try {
                         const { members } = await spondService.getMembers(targetGroupId);
-                        // Get group name for label? We might need to fetch group details or just use generic
-                        // But typically we can just show the members. 
-                        // To get group name we'd need to fetch groups too or just the group.
-                        // Let's being robust: fetch groups to get name map, but only fetch members for target.
                         const { groups } = await spondService.getGroups();
                         const group = groups.find(g => g.id === targetGroupId);
                         const groupName = group ? group.name : 'Team Group';
@@ -63,15 +52,6 @@ export default function PlayerDashboard() {
                          console.error("Failed to fetch target group members", e);
                      }
                 } else {
-                    // Fallback: Check all groups if no team link (or show warning?)
-                    // User complained about "all players", so let's maybe default to empty or limited?
-                    // But if it's a new player not in a team yet, "all players" might be useful or confusing.
-                    // Let's keep "all" but maybe grouped better or just warn.
-                    // Actually, the user specifically said "linked with the players team".
-                    // If no team link, maybe show all but it's overwhelming.
-                    // I'll keep the logic but maybe optimize. 
-                    // Wait, the complaint was "only be presented with members from the group that is linked".
-                    // So if there IS a link, do that. If not, maybe show all (legacy behavior).
                     const { groups } = await spondService.getGroups();
                     let all = [];
                     for (const g of groups) {
@@ -97,12 +77,12 @@ export default function PlayerDashboard() {
 
     // Populate form
     React.useEffect(() => {
-        if (playerData?.player) {
+        if (playerData) {
             setFormData({
-                name: playerData.player.name || '',
-                position: playerData.player.position || '',
-                left_date: playerData.player.left_date || '',
-                spond_id: playerData.player.spond_id || ''
+                name: playerData.name || '',
+                position: playerData.position || '',
+                left_date: playerData.left_date || '',
+                spond_id: playerData.spond_id || ''
             });
         }
     }, [playerData]);

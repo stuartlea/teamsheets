@@ -32,8 +32,10 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
     const [featuredLabelType, setFeaturedLabelType] = useState('Captain');
     const [featuredLabelCustom, setFeaturedLabelCustom] = useState('');
     const [nameFormat, setNameFormat] = useState('initial'); // 'full', 'surname', 'initial'
-    const [kitText, setKitText] = useState('Number 1s');
+    const [kitText, setKitText] = useState('');
     const [kitTextCustom, setKitTextCustom] = useState('');
+    const [downloadSize, setDownloadSize] = useState('2');
+    const [template, setTemplate] = useState('Standard'); // 'Standard' or 'Mobile'
     
     // Computed/Fetched State
     const [featuredImage, setFeaturedImage] = useState(null);
@@ -145,12 +147,17 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
         if (!target) return;
         
         try {
+            const pixelRatio = parseFloat(downloadSize);
+            const isMobile = template === 'Mobile';
+            const width = isMobile ? 1080 : 1000;
+            const height = isMobile ? 2160 : 1250;
+
             const dataUrl = await htmlToImage.toPng(target, {
                 cacheBust: true,
-                pixelRatio: 2,
+                pixelRatio: pixelRatio,
                 imagePlaceholder: '/static/pitch-assets/player-silhouette.png',
-                width: 1000,
-                height: 1250,
+                width: width,
+                height: height,
                 backgroundColor: '#022c22',
                 style: {
                     color: 'white'
@@ -169,6 +176,9 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
             alert('Failed to generate image');
         }
     };
+    
+    // Validation for Export
+    const isExportReady = featuredPlayer && kitText;
 
     if (!isOpen) return null;
 
@@ -191,6 +201,19 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                         <div className="text-slate-500 text-sm">Loading team data...</div>
                     ) : teamData ? (
                         <div className="space-y-6">
+                            {/* Template Selector */}
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">Template</label>
+                                <select 
+                                    value={template}
+                                    onChange={e => setTemplate(e.target.value)}
+                                    className="w-full p-2 border rounded shadow-sm text-sm"
+                                >
+                                    <option value="Standard">Standard (1000x1250)</option>
+                                    <option value="Mobile">Mobile / Story (1080x1920)</option>
+                                </select>
+                            </div>
+
                             {/* Feature Player */}
                             <div>
                                 <label className="block text-sm font-semibold text-slate-700 mb-2">Featured Player</label>
@@ -252,8 +275,10 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                                     onChange={e => setKitText(e.target.value)}
                                     className="w-full p-2 border rounded shadow-sm text-sm"
                                 >
+                                    <option value="" disabled>Select instructions...</option>
                                     <option value="Number 1s">Number 1s</option>
                                     <option value="Polos">Polos/Chinos</option>
+                                    <option value="None">Leave Empty</option>
                                     <option value="Custom">Custom</option>
                                 </select>
                                 {kitText === 'Custom' && (
@@ -266,9 +291,29 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                                 )}
                             </div>
 
+                            {/* Download Size */}
+                            <div className="pt-4 border-t border-slate-200">
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">Download Size</label>
+                                <select 
+                                    value={downloadSize}
+                                    onChange={e => setDownloadSize(e.target.value)}
+                                    className="w-full p-2 border rounded shadow-sm text-sm"
+                                >
+                                    <option value="2">High Res (Print) - 2000px</option>
+                                    <option value="1">Standard (Socials) - 1000px</option>
+                                    <option value="0.5">Small (Thumbnail) - 500px</option>
+                                </select>
+                            </div>
+
                             <button 
                                 onClick={handleExport}
-                                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow flex items-center justify-center gap-2 transition-transform active:scale-95"
+                                disabled={!isExportReady}
+                                className={clsx(
+                                    "w-full font-bold py-3 px-4 rounded-lg shadow flex items-center justify-center gap-2 transition-transform",
+                                    isExportReady 
+                                        ? "bg-green-600 hover:bg-green-700 text-white active:scale-95" 
+                                        : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                                )}
                             >
                                 <Download size={20} /> Download PNG
                             </button>
@@ -280,21 +325,38 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
 
                 {/* Preview Area */}
                 <div className="flex-1 bg-slate-200 overflow-auto flex justify-center p-8">
-                     {/* Scale Wrapper if needed, or just overflow */}
-                     <div className="relative shadow-2xl origin-top" style={{ minWidth: '1000px', minHeight: '1250px' }}>
+                     <div className="relative shadow-2xl origin-top" style={{ 
+                         minWidth: template === 'Mobile' ? '1080px' : '1000px', 
+                         minHeight: template === 'Mobile' ? '2160px' : '1250px' 
+                     }}>
                         {teamData && (
-                            <TeamSheetSVG 
-                                data={teamData}
-                                featuredPlayer={featuredPlayer}
-                                featuredImage={featuredImage}
-                                metadata={metadata}
-                                featuredLabelType={featuredLabelType}
-                                featuredLabelCustom={featuredLabelCustom}
-                                nameFormat={nameFormat}
-                                kitText={kitText}
-                                kitTextCustom={kitTextCustom}
-                                playerImages={playerImages}
-                            />
+                            template === 'Mobile' ? (
+                                <TeamSheetMobileSVG 
+                                    data={teamData}
+                                    featuredPlayer={featuredPlayer}
+                                    featuredImage={featuredImage}
+                                    metadata={metadata}
+                                    featuredLabelType={featuredLabelType}
+                                    featuredLabelCustom={featuredLabelCustom}
+                                    nameFormat={nameFormat}
+                                    kitText={kitText}
+                                    kitTextCustom={kitTextCustom}
+                                    playerImages={playerImages}
+                                />
+                            ) : (
+                                <TeamSheetStandardSVG 
+                                    data={teamData}
+                                    featuredPlayer={featuredPlayer}
+                                    featuredImage={featuredImage}
+                                    metadata={metadata}
+                                    featuredLabelType={featuredLabelType}
+                                    featuredLabelCustom={featuredLabelCustom}
+                                    nameFormat={nameFormat}
+                                    kitText={kitText}
+                                    kitTextCustom={kitTextCustom}
+                                    playerImages={playerImages}
+                                />
+                            )
                         )}
                      </div>
                 </div>
@@ -303,8 +365,8 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
     );
 }
 
-// --- SVG COMPONENT (Ported Exact Logic) ---
-function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, featuredLabelType, featuredLabelCustom, nameFormat, kitText, kitTextCustom, playerImages }) {
+// --- STANDARD SVG COMPONENT ---
+function TeamSheetStandardSVG({ data, featuredPlayer, featuredImage, metadata, featuredLabelType, featuredLabelCustom, nameFormat, kitText, kitTextCustom, playerImages }) {
     
     // Helpers
     const formatName = (name, isCaptain = false) => {
@@ -354,8 +416,8 @@ function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, featuredL
 
     const matchName = data.match_name || "Fixture"; // Ensure we get this.
 
-    const featuredName = featuredPlayer || (starters[9] ? starters[9].name : '') || 'The Team';
-    const finalLabel = (featuredLabelType === 'Custom' ? featuredLabelCustom : featuredLabelType) || 'FEATURED STAR';
+    const featuredName = featuredPlayer || '';
+    const finalLabel = featuredPlayer ? ((featuredLabelType === 'Custom' ? featuredLabelCustom : featuredLabelType) || 'FEATURED STAR') : '';
     const displayLocation = (metadata.location === 'Custom' ? (metadata.custom_location || 'TBC') : (metadata.location || 'TBC')).toUpperCase();
     const displayTitle = (metadata.custom_title || 'Match Day').toUpperCase();
 
@@ -509,7 +571,7 @@ function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, featuredL
                 x="880" 
                 y="830"
                 width="200" 
-                text={kitText === 'Custom' ? kitTextCustom : (kitText === 'Number 1s' ? "Number 1's post match" : 'Polos and Chinos post match')}
+                text={(!kitText || kitText === 'None') ? '' : (kitText === 'Custom' ? kitTextCustom : (kitText === 'Number 1s' ? "Number 1's post match" : 'Polos and Chinos post match'))}
                 fontSize={12}
                 fill="#FFD700"
                 fontWeight="bold"
@@ -520,36 +582,40 @@ function TeamSheetSVG({ data, featuredPlayer, featuredImage, metadata, featuredL
 
             {/* Featured footer */}
             <g transform="translate(780, 1065)">
-                <g transform="translate(40, -140)">
-                     <circle cx="60" cy="60" r="64" fill="#10b981" />
-                     <g clipPath="url(#featuredAvatarClip)">
-                        {featuredImage ? (
-                            <image href={featuredImage} x="0" y="0" width="120" height="120" preserveAspectRatio="xMidYMid slice" />
-                        ) : (
-                            <use href="#silhouette" x="0" y="0" width="120" height="120" />
-                        )}
-                     </g>
-                </g>
-                <text x="0" y="40" fill="#FFD700" fontSize="12" fontWeight="900" letterSpacing="3" style={{ fontFamily: 'sans-serif' }}>
-                    {finalLabel.toUpperCase()}
-                </text>
-                
-                {/* Featured Name - Using Wrapping Helper */}
-                <WordWrapText 
-                    x="0" 
-                    y="80"
-                    width="200" 
-                    text={featuredName}
-                    fontSize={32}
-                    fill="white"
-                    fontWeight="900"
-                    fontFamily="sans-serif"
-                    lineHeight={1.0}
-                    style={{ textTransform: 'uppercase' }}
-                />
+                {featuredPlayer && (
+                    <>
+                        <g transform="translate(40, -140)">
+                             <circle cx="60" cy="60" r="64" fill="#10b981" />
+                             <g clipPath="url(#featuredAvatarClip)">
+                                {featuredImage ? (
+                                    <image href={featuredImage} x="0" y="0" width="120" height="120" preserveAspectRatio="xMidYMid slice" />
+                                ) : (
+                                    <use href="#silhouette" x="0" y="0" width="120" height="120" />
+                                )}
+                             </g>
+                        </g>
+                        <text x="0" y="40" fill="#FFD700" fontSize="12" fontWeight="900" letterSpacing="3" style={{ fontFamily: 'sans-serif' }}>
+                            {finalLabel.toUpperCase()}
+                        </text>
+                        
+                        {/* Featured Name - Using Wrapping Helper */}
+                        <WordWrapText 
+                            x="0" 
+                            y="80"
+                            width="200" 
+                            text={featuredName}
+                            fontSize={32}
+                            fill="white"
+                            fontWeight="900"
+                            fontFamily="sans-serif"
+                            lineHeight={1.0}
+                            style={{ textTransform: 'uppercase' }}
+                        />
 
-                <line x1="0" y1="165" x2="200" y2="165" stroke="#EE0000" strokeWidth="4" />
-                <line x1="0" y1="173" x2="200" y2="173" stroke="#FFD700" strokeWidth="4" />
+                        <line x1="0" y1="165" x2="200" y2="165" stroke="#EE0000" strokeWidth="4" />
+                        <line x1="0" y1="173" x2="200" y2="173" stroke="#FFD700" strokeWidth="4" />
+                    </>
+                )}
             </g>
 
             <image href="/static/pitch-assets/SRUFC Crest V2.svg" x="820" y="15" width="130" height="130" preserveAspectRatio="xMidYMid meet" />
@@ -596,5 +662,272 @@ function WordWrapText({ x, y, width, text, fontSize, lineHeight = 1.2, textAncho
                 </tspan>
             ))}
         </text>
+    );
+}
+
+// --- MOBILE SVG COMPONENT ---
+function TeamSheetMobileSVG({ data, featuredPlayer, featuredImage, metadata, featuredLabelType, featuredLabelCustom, nameFormat, kitText, kitTextCustom, playerImages }) {
+    
+    // Helper to format name
+    const formatName = (name, isCaptain = false) => {
+        if (!name) return 'TBA';
+        const parts = name.split(' ');
+        let formatted;
+        if (nameFormat === 'surname' && parts.length > 1) {
+            formatted = parts.slice(1).join(' ');
+        } else if (nameFormat === 'initial' && parts.length > 1) {
+            formatted = parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
+        } else {
+            formatted = name;
+        }
+        return formatted.toUpperCase() + (isCaptain ? ' (C)' : '');
+    };
+
+    const parseOpponent = (fixtureName) => {
+        if (!fixtureName) return '';
+        const match = fixtureName.match(/^\d+:\s*(.+?)\s*\([HA]\)$/i);
+        return match ? match[1].trim() : fixtureName;
+    };
+
+    const starters = data.starters || [];
+    const finishers = data.finishers || [];
+    const matchName = data.match_name || "Fixture";
+    
+    const featuredName = featuredPlayer || '';
+    const finalLabel = featuredPlayer ? ((featuredLabelType === 'Custom' ? featuredLabelCustom : featuredLabelType) || 'FEATURED STAR') : '';
+    const displayLocation = (metadata.location === 'Custom' ? (metadata.custom_location || 'TBC') : (metadata.location || 'TBC')).toUpperCase();
+    const displayTitle = (metadata.custom_title || 'Match Day').toUpperCase();
+
+    // Layout Calculations
+    const activeFinishers = finishers.filter(p => p.name).slice(0, 15);
+    const numFinishers = activeFinishers.length;
+    const fCols = 4;
+    const fRows = Math.ceil(Math.max(1, numFinishers) / fCols);
+    // Tighter spacing: 40px per row. Headroom: 60px. Min height 100.
+    const fPanelHeight = Math.max(100, 60 + (fRows * 40)); 
+    const captainsPanelY = 1530 + fPanelHeight + 80; // Increased gap to 80px
+
+    // Dimensions: 1080 x 1920
+    // Pitch Strategy:
+    // Standard pitch drawing is 750px wide x 1250px tall (roughly).
+    // We want to fit it in the top part.
+    // Let's scale the pitch group by ~0.8 to fit 600px width? Or keep it wide?
+    // 1080 width allows for full 750px pitch centered.
+    // But height might be issue. 1250 height is too tall for top half.
+    // Scale 0.8 => 600w x 1000h. Leaves 900px for rest. Good.
+    
+    return (
+        <svg id="team-sheet-svg" viewBox="0 0 1080 2160" style={{ width: 1080, height: 2160 }} fill="white">
+            <defs>
+                <linearGradient id="pitchGradMobile" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#064e3b" />
+                    <stop offset="100%" stopColor="#022c22" />
+                </linearGradient>
+                <pattern id="grassTextureMobile" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <rect width="40" height="40" fill="transparent" />
+                    <line x1="0" y1="0" x2="40" y2="0" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
+                </pattern>
+                <clipPath id="avatarCircleMobile">
+                    <circle cx="0" cy="0" r="28" />
+                </clipPath>
+                <clipPath id="featuredAvatarClipMobile">
+                     {/* Larger for mobile feature */}
+                    <circle cx="100" cy="100" r="100" />
+                </clipPath>
+                 {/* Re-define gradient for bottom fade */}
+                <linearGradient id="bottomFade" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#022c22" stopOpacity="0" />
+                    <stop offset="80%" stopColor="#022c22" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#022c22" stopOpacity="1" />
+                </linearGradient>
+            </defs>
+
+            {/* Background */}
+            <rect width="1080" height="2160" fill="#022c22" />
+            
+            {/* Header Section (0 - 200) */}
+             <rect width="1080" height="200" fill="#022c22" /> 
+             {/* Title Left */}
+             <text x="50" y="80" fill="#FFD700" fontSize="24" fontWeight="800" letterSpacing="4">
+                {displayTitle}
+            </text>
+            <text x="50" y="150" fontSize="72" fontWeight="900" style={{ fontFamily: 'sans-serif' }}>
+                <tspan fill="#EE0000">Vs </tspan>
+                <tspan fill="white">{data.fixture_info?.opponent_name || parseOpponent(data.match_name || '') || 'OPPONENT'}</tspan> 
+            </text>
+
+            {/* Match Details Line */}
+            <line x1="50" y1="180" x2="1030" y2="180" stroke="rgba(255,255,255,0.2)" strokeWidth="2" />
+            <text x="50" y="210" fill="white" fontSize="20" fontWeight="bold" style={{ fontFamily: 'sans-serif' }}>
+                 {metadata.match_date ? new Date(metadata.match_date).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'}).toUpperCase() : ''}
+                 {'  |  '}
+                 <tspan fill="#10b981">{displayLocation}</tspan>
+            </text>
+            <text x="1030" y="210" textAnchor="end" fill="white" fontSize="20" fillOpacity="0.8" style={{ fontFamily: 'sans-serif' }}>
+                KO: {metadata.kickoff || 'TBC'}
+            </text>
+
+            {/* Logo - Top Right (Smaller) */}
+            <image href="/static/pitch-assets/SRUFC Crest V2.svg" x="880" y="20" width="150" height="150" preserveAspectRatio="xMidYMid meet" />
+            {/* PITCH SECTION - Adjusted for space */}
+            {/* Scale 1.15, Start Y 220 */}
+            <g transform="translate(108, 220) scale(1.15)">
+                 {/* Pitch Backgrounds */}
+                <rect width="750" height="1100" fill="url(#pitchGradMobile)" />
+                <rect width="750" height="1100" fill="url(#grassTextureMobile)" />
+
+                 {/* Markings */}
+                 <g stroke="rgba(255,255,255,0.25)" strokeWidth="2" fill="none">
+                    <rect x="20" y="20" width="710" height="1060" strokeWidth="1" opacity="0.3" />
+                    <line x1="20" y1="80" x2="730" y2="80" strokeWidth="1" />
+                    
+                    {/* STARTING LINEUP TEXT */}
+                    <text x="375" y="60" textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize="24" fontWeight="900" letterSpacing="4" style={{ fontFamily: 'sans-serif' }}>
+                        STARTING LINEUP
+                    </text>
+                </g>
+
+                {/* PLAYERS */}
+                <g transform="translate(-25, 50)">
+                    {POSITIONS.map((pos, idx) => {
+                        const starter = starters[idx];
+                        const playerName = starter ? starter.name : 'TBA';
+                        const isFeatured = featuredPlayer && starter && starter.name === featuredPlayer;
+                        const playerImage = playerName && playerImages ? playerImages[playerName] : null;
+                        
+                        // Custom Vertical Adjustments
+                        let yOffset = 0;
+                        if (idx <= 7) yOffset = -50;
+                        else if (idx <= 9) yOffset = -10;
+                        else if (idx >= 10) yOffset = 30;
+
+                        const tx = pos.cx * 7.5; 
+                        const ty = (pos.cy * 9.5) + yOffset; 
+
+                        return (
+                            <g key={pos.id} transform={`translate(${tx}, ${ty})`}>
+                                {isFeatured && <circle r="38" fill="rgba(16, 185, 129, 0.4)" />}
+                                <circle r="32" fill={isFeatured ? '#10b981' : 'rgba(15, 23, 42, 0.9)'} stroke={isFeatured ? 'white' : 'rgba(255,255,255,0.3)'} strokeWidth="2" />
+                                <g clipPath="url(#avatarCircleMobile)">
+                                    <rect x="-30" y="-30" width="60" height="60" fill="#0f172a" />
+                                    {playerImage ? (
+                                        <image href={playerImage} x="-30" y="-30" width="60" height="60" preserveAspectRatio="xMidYMid slice" />
+                                    ) : (
+                                        <use href="#silhouette" x="-30" y="-30" width="60" height="60" />
+                                    )}
+                                </g>
+                                <circle cx="26" cy="-26" r="12" fill="white" stroke="#064e3b" strokeWidth="1" />
+                                <text x="26" y="-22" textAnchor="middle" fill="#064e3b" fontSize="10" fontWeight="900" style={{ fontFamily: 'sans-serif' }}>{pos.label}</text>
+                                
+                                <g transform="translate(0, 48)">
+                                    <rect x="-65" y="-16" width="130" height="32" rx="4" fill="rgba(0,0,0,0.85)" stroke={isFeatured ? '#10b981' : 'none'} strokeWidth="1" />
+                                    <text textAnchor="middle" y="0" fill="white" fontSize="12" fontWeight="bold" style={{ fontFamily: 'sans-serif' }}>
+                                        {formatName(playerName, featuredLabelType === 'Captain' && isFeatured)}
+                                    </text>
+                                    <text textAnchor="middle" y="12" fill="white" fontSize="8" fontWeight="900" letterSpacing="1" style={{ fontFamily: 'sans-serif' }}>
+                                        {pos.role.toUpperCase()}
+                                    </text>
+                                </g>
+                            </g>
+                        );
+                    })}
+                </g>
+            </g>
+
+            {/* FINISHERS - Full Width (40 - 1040) - 4 Columns Dynamic */}
+            <g transform="translate(40, 1530)">
+                <rect width="1000" height={fPanelHeight} rx="16" fill="rgba(255,255,255,0.05)" />
+                <rect width="200" height="40" rx="8" x="20" y="-20" fill="#10b981" />
+                <text x="120" y="5" textAnchor="middle" fill="#022c22" fontSize="20" fontWeight="900" letterSpacing="2" style={{ fontFamily: 'sans-serif' }}>FINISHERS</text>
+                
+                {/* 4 Column Layout */}
+                {activeFinishers.map((player, i) => (
+                    <g key={i} transform={`translate(${40 + (i % 4) * 235}, ${50 + Math.floor(i/4) * 40})`}>
+                         {/* Circle Number */}
+                        <circle cx="15" cy="-5" r="14" fill="rgba(255,255,255,0.1)" />
+                        <text x="15" y="0" textAnchor="middle" fill="#10b981" fontSize="12" fontWeight="900" style={{ fontFamily: 'sans-serif' }}>{i + 16}</text>
+                        {/* Name - Smaller font, Tighter */}
+                        <text x="38" y="0" fill="white" fontSize="16" fontWeight="bold" style={{ fontFamily: 'sans-serif' }}>{formatName(player.name)}</text>
+                    </g>
+                ))}
+            </g>
+
+            {/* CAPTAIN'S ORDERS / FEATURED - Full Width Bottom Panel */}
+            <g transform={`translate(40, ${captainsPanelY})`}>
+                <rect width="1000" height="380" rx="16" fill="rgba(255,255,255,0.05)" />
+                
+                {/* Title Box (Yellow) */}
+                <rect width="300" height="40" rx="8" x="20" y="-20" fill="#FFD700" />
+                <text x="170" y="5" textAnchor="middle" fill="#022c22" fontSize="20" fontWeight="900" letterSpacing="2" style={{ fontFamily: 'sans-serif' }}>
+                    CAPTAIN'S ORDERS
+                </text>
+
+                {/* Left 1/3: Featured Player */}
+                {/* Moved down to avoid overlapping title (y=150 center, r=85, top=65, title_bottom=20) */}
+                {featuredPlayer && (
+                    <g transform="translate(180, 150)">
+                        <circle cx="0" cy="0" r="85" fill="#10b981" />
+                        <g clipPath="url(#avatarCircleMobile)" transform="scale(2.8)">
+                             {featuredImage ? (
+                                <image href={featuredImage} x="-30" y="-30" width="60" height="60" preserveAspectRatio="xMidYMid slice" />
+                            ) : (
+                                <use href="#silhouette" x="-30" y="-30" width="60" height="60" />
+                            )}
+                        </g>
+                         <text x="0" y="110" textAnchor="middle" fill="#FFD700" fontSize="16" fontWeight="900" letterSpacing="1" style={{ fontFamily: 'sans-serif' }}>
+                            {finalLabel.toUpperCase()}
+                        </text>
+                        <WordWrapText 
+                            x="0" 
+                            y="150" 
+                            width="300" 
+                            text={featuredName}
+                            fontSize={36}
+                            fill="white"
+                            fontWeight="900"
+                            fontFamily="sans-serif"
+                            textAnchor="middle"
+                            style={{ textTransform: 'uppercase' }}
+                            lineHeight={1.0}
+                        />
+                    </g>
+                )}
+
+                {/* Right 2/3: Notes */}
+                {/* Aligned with top of player image circle (approx y=65 for top of circle) */}
+                <g transform="translate(380, 65)">
+                    <foreignObject width="580" height="280">
+                         <div xmlns="http://www.w3.org/1999/xhtml" className="captains-orders-text" style={{ 
+                             color: 'white', 
+                             fontSize: '24px', 
+                             fontFamily: 'sans-serif', 
+                             fontWeight: 'bold',
+                             display: 'flex',
+                             flexDirection: 'column',
+                             alignItems: 'flex-start',
+                             height: '100%'
+                        }}>
+                            <style>
+                                {`
+                                    .captains-orders-text, .captains-orders-text * {
+                                        color: white !important;
+                                        text-decoration: none !important;
+                                        -webkit-text-fill-color: white !important;
+                                    }
+                                `}
+                            </style>
+                             {metadata.meet_time && (
+                                 <div style={{ marginBottom: '10px', color: '#FFD700', textTransform: 'uppercase' }}>
+                                     MEET: {metadata.meet_time}
+                                 </div>
+                             )}
+                             <span>
+                                 {(!kitText || kitText === 'None') ? '' : (kitText === 'Custom' ? kitTextCustom : (kitText === 'Number 1s' ? "Number 1's post match" : 'Polos and Chinos post match'))}
+                             </span>
+                        </div>
+                    </foreignObject>
+                </g>
+            </g>
+        </svg>
     );
 }
