@@ -164,6 +164,10 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False # Dev only
 CSRF_COOKIE_SECURE = False # Dev only
+CSRF_COOKIE_HTTPONLY = False # Allow React to read the cookie
+CSRF_USE_SESSIONS = False # Use cookie-based CSRF for easier SPA integration
+CSRF_COOKIE_NAME = 'csrftoken'
+CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 
 # Spond Configuration
 SPOND_USERNAME = os.environ.get('SPOND_USERNAME')
