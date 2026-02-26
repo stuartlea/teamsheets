@@ -20,14 +20,30 @@ cd teamsheets
 ```
 
 ### Step 2: Configure Environment Variables
+You have two main ways to provide the required variables:
+
+#### Option A: Use a `.env` file (Recommended)
 Create a `.env` file in the root directory:
 ```bash
 nano .env
 ```
-Add the following required variables:
+Add the following:
 - `SPOND_USERNAME`: Your Spond email.
 - `SPOND_PASSWORD`: Your Spond password.
-- `SECRET_KEY`: A secure random string for Django (e.g., generate one with `openssl rand -base64 32`).
+- `SECRET_KEY`: A secure random string for Django.
+
+#### Option B: Define in `docker-compose.yml`
+You can also hardcode them directly in the `environment:` section of [docker-compose.yml](file:///home/stuart/Development/TeamSheets/docker-compose.yml):
+```yaml
+services:
+  backend:
+    environment:
+      - SPOND_USERNAME=your_email@example.com
+      - SPOND_PASSWORD=your_password
+      - SECRET_KEY=your_secret_key
+```
+> [!WARNING]
+> Only use Option B if you are sure other people won't have access to your server or source code, as it exposes your secrets in plain text.
 
 ### Step 3: Launch Containers
 Build and start the services in detached mode:
