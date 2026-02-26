@@ -47,11 +47,14 @@ docker-compose up --build -d
 ### Upgrading to a New Version
 When you have new code or database changes:
 1. `git pull`
-2. `docker-compose build`
-3. `docker-compose up -d`
-4. `docker-compose exec backend uv run python manage.py migrate`
+2. `docker compose build`
+3. `docker compose up -d`
+4. `docker compose exec backend uv run python manage.py migrate`
 
-For detailed steps, see the [upgrade workflow](file:///home/stuart/Development/TeamSheets/_agents/workflows/upgrade.md).
+### Fresh Remote Deployment
+To set this up on a separate Docker server:
+1. `git clone http://192.168.1.150:10055/stuartlea/teamsheets.git`
+2. Follow the [deployment workflow](file:///home/stuart/Development/TeamSheets/_agents/workflows/deploy.md) for full instructions.
 
 ## Environment Variables
 
