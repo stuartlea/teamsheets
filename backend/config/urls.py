@@ -21,6 +21,6 @@ urlpatterns = [
     path('oauth/callback/', oauth_callback),
     path('oauth/callback', oauth_callback), # No trailing slash
 
-    # Catch-all for React Frontend
-    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
+    # Catch-all for React Frontend (excluding static, api, and admin)
+    re_path(r'^(?!static/|api/|admin/|oauth/|__debug__).*$', TemplateView.as_view(template_name='index.html')),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
