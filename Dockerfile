@@ -1,12 +1,18 @@
-# Production Dockerfile for Django
+# Unified Multi-stage Dockerfile for Team Sheets (Django + React)
 
+# --- Stage 1: Frontend Build ---
+FROM node:20-alpine AS frontend-build
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install
+COPY frontend/ .
+RUN npm run build
+
+# --- Stage 2: Final Image ---
 FROM python:3.14-slim
-
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV DJANGO_SETTINGS_MODULE config.settings
-
 WORKDIR /app
 
 # Install system dependencies
@@ -18,21 +24,23 @@ RUN apt-get update && apt-get install -y \
 # Install uv for fast dependency management
 RUN pip install --no-cache-dir uv
 
-# Copy the entire project context to leverage pyproject.toml
+# Copy backend dependencies
 COPY pyproject.toml uv.lock ./
-
-# Sync dependencies (including django and gunicorn)
 RUN uv sync --frozen --no-dev
 
 # Copy the Django application code
-COPY backend/ .
+COPY backend/ ./backend/
+# Copy the built frontend artifacts
+COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
-# Ensure static directories exist
+WORKDIR /app/backend
+
+# Create static directories and pre-collect static files (optional but good for WhiteNoise)
 RUN mkdir -p static/players static/pitch-assets
+RUN uv run python manage.py collectstatic --noinput
 
 # Expose port 8000
 EXPOSE 8000
 
 # Run gunicorn
-# Note: we use 'uv run' to ensure we use the virtualenv created by uv
 CMD ["uv", "run", "gunicorn", "--bind", "0.0.0.0:8000", "config.wsgi:application", "--workers", "3"]

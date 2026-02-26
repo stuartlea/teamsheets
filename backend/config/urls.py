@@ -10,6 +10,8 @@ from django.conf.urls.static import static
 # So we need to expose that at root level or change the env var.
 
 from api.views.auth import oauth_callback
+from django.views.generic import TemplateView
+from django.urls import re_path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -18,4 +20,7 @@ urlpatterns = [
     # Root level OAuth callback to match default env var/Flask structure if needed
     path('oauth/callback/', oauth_callback),
     path('oauth/callback', oauth_callback), # No trailing slash
+
+    # Catch-all for React Frontend
+    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

@@ -36,7 +36,7 @@ Add the following:
 You can also hardcode them directly in the `environment:` section of [docker-compose.yml](file:///home/stuart/Development/TeamSheets/docker-compose.yml):
 ```yaml
 services:
-  backend:
+  app:
     environment:
       - SPOND_USERNAME=your_email@example.com
       - SPOND_PASSWORD=your_password
@@ -86,22 +86,19 @@ docker compose exec backend uv run python manage.py migrate
 ## 3. Operations & Troubleshooting
 
 ### Viewing Logs
-To see what's happening inside the containers:
 ```bash
-docker compose logs -f         # All services
-docker compose logs -f backend # Backend only
-docker compose logs -f frontend # Frontend/Nginx only
+docker compose logs -f
 ```
 
 ### Database Management
 To create a new superuser for the Django Admin:
 ```bash
-docker compose exec backend uv run python manage.py createsuperuser
+docker compose exec app uv run python manage.py createsuperuser
 ```
 
 To create new migrations after model changes:
 ```bash
-docker compose exec backend uv run python manage.py makemigrations
+docker compose exec app uv run python manage.py makemigrations
 ```
 
 ### Static Assets
@@ -112,6 +109,6 @@ Player headshots should be placed in `backend/static/players/` on the host machi
 
 ## 4. Accessing the Application
 
-- **Frontend UI**: `http://<server-ip>`
-- **Backend API**: `http://<server-ip>:8000/api/`
+- **Web Interface**: `http://<server-ip>:8000` (Login, Dashboard, etc.)
 - **Django Admin**: `http://<server-ip>:8000/admin/`
+- **Backend API**: `http://<server-ip>:8000/api/`

@@ -25,7 +25,7 @@ Ensure you include:
 - `SECRET_KEY` (Generate a new secure string for production)
 
 ### 4. Build and Start
-Run the initial orchestration. This will build the Python (backend) and Nginx/React (frontend) images:
+Run the initial orchestration. This will build the unified image containing both backend and frontend:
 ```bash
 docker compose up --build -d
 ```
@@ -33,10 +33,10 @@ docker compose up --build -d
 ### 5. Initialize the Database
 Run the Django migrations to create the SQLite database and tables inside the container:
 ```bash
-docker compose exec backend uv run python manage.py migrate
+docker compose exec app uv run python manage.py migrate
 ```
 
 ### 6. Verification
 The app should now be accessible at:
-- Frontend: `http://<server-ip>`
-- Backend/Admin: `http://<server-ip>:8000/admin`
+- Web Interface: `http://<server-ip>:8000`
+- Django Admin: `http://<server-ip>:8000/admin`

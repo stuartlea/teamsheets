@@ -11,31 +11,31 @@ git pull origin main
 ```
 
 ### 2. Update the Docker images
-Build the new images (this ensures any dependency changes in `pyproject.toml` or `package.json` are captured):
+Build the new unified image:
 ```bash
-docker-compose build
+docker compose build
 ```
 
 ### 3. Restart the services
-Restart the containers with the new images:
+Restart the container with the new image:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 4. Run Database Migrations
-If your changes included model updates, you MUST run the migrations inside the backend container:
+If your changes included model updates, you MUST run the migrations inside the app container:
 ```bash
-docker-compose exec backend uv run python manage.py migrate
+docker compose exec app uv run python manage.py migrate
 ```
 
 ### 5. (Optional) Create Migrations
 If you've made new changes to your models locally and want to generate migration files:
 ```bash
-docker-compose exec backend uv run python manage.py makemigrations
+docker compose exec app uv run python manage.py makemigrations
 ```
 
 ### 6. (Optional) Check Logs
 If something goes wrong, check the logs:
 ```bash
-docker-compose logs -f
+docker compose logs -f
 ```

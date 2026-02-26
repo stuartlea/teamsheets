@@ -49,7 +49,7 @@ When you have new code or database changes:
 1. `git pull`
 2. `docker compose build`
 3. `docker compose up -d`
-4. `docker compose exec backend uv run python manage.py migrate`
+4. `docker compose exec app uv run python manage.py migrate`
 
 ### Fresh Remote Deployment
 To set this up on a separate Docker server:
