@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-k*n1m)cdp1ts8-)uo9*m8!5wcohszs55z(r)wb6gtoi)_pjep5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 # Disable Django's default redirecting append slash (we handle it in middleware)
 APPEND_SLASH = False
@@ -147,10 +147,19 @@ CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:8000']
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173', 
+    'http://127.0.0.1:5173', 
+    'http://localhost:8000',
+    'http://localhost:8001',
+    'http://127.0.0.1:8001'
+]
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False # Dev only

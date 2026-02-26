@@ -16,7 +16,9 @@ class ApiTrailingSlashMiddleware:
         # Only target /api/ routes that don't have a trailing slash
         # and don't look like a file (have an extension)
         if path.startswith('/api/') and not path.endswith('/') and '.' not in os.path.basename(path):
-            request.path_info = path + '/'
+            new_path = path + '/'
+            # print(f"DEBUG: Middleware rewriting {path} -> {new_path}")
+            request.path_info = new_path
             
         response = self.get_response(request)
         return response

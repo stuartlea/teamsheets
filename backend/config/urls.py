@@ -15,12 +15,12 @@ from django.urls import re_path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('api.urls')),
+    re_path(r'^api/', include('api.urls')),
     
     # Root level OAuth callback to match default env var/Flask structure if needed
     path('oauth/callback/', oauth_callback),
     path('oauth/callback', oauth_callback), # No trailing slash
 
-    # Catch-all for React Frontend (excluding static, api, and admin)
-    re_path(r'^(?!static/|api/|admin/|oauth/|__debug__).*$', TemplateView.as_view(template_name='index.html')),
+    # Catch-all for React Frontend (excluding known backend prefixes)
+    re_path(r'^(?!(api|static|admin|oauth|favicon\.ico|logo\.png|vite\.svg|__debug__)).*$', TemplateView.as_view(template_name='index.html')),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
