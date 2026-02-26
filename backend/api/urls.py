@@ -7,7 +7,7 @@ from .views.spond import SpondGroupsView, SpondEventsView, SpondMembersView
 from .views.availability import AvailabilityViewSet
 from .views.images import PlayerImageView, StaticProxyView
 
-router = DefaultRouter(trailing_slash=False)
+router = DefaultRouter()
 router.register(r'teams', TeamViewSet, basename='team')
 router.register(r'seasons', SeasonViewSet)
 router.register(r'team-seasons', TeamSeasonViewSet)

@@ -28,7 +28,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-# Prevent Django from appending slashes to URLs (crucial for REST APIs with PUT/POST)
+# Disable Django's default redirecting append slash (we handle it in middleware)
 APPEND_SLASH = False
 
 
@@ -54,6 +54,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'core.middleware.ApiTrailingSlashMiddleware', # Support both slash/no-slash for API
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware', # WhiteNoise
     'django.contrib.sessions.middleware.SessionMiddleware',
