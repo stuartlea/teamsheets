@@ -31,6 +31,7 @@ class AuthStatusView(APIView):
         })
 
 @method_decorator(csrf_exempt, name='dispatch')
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -47,6 +48,7 @@ class LoginView(APIView):
         else:
             return Response({'success': False, 'error': 'Invalid credentials'}, status=401)
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class LogoutView(APIView):
     def post(self, request):
         logout(request)
