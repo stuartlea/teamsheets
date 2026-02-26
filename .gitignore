@@ -50,7 +50,9 @@ Thumbs.db
 # Logs
 *.log
 
-# Static assets (should be managed separately)
+# Static assets and Docker volumes (managed locally)
+players/
+data/
 static/players/*.png
 static/players/*.jpg
 static/players/*.jpeg

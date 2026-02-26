@@ -6,8 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ${DOCKER_PROJECT_ROOT:-.}/data:/app/backend/data
-      - ${DOCKER_PROJECT_ROOT:-.}/players:/app/backend/static/players
+      - ./data:/app/backend/data
+      - ./players:/app/backend/static/players
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - DATABASE_PATH=/app/backend/data/db.sqlite3

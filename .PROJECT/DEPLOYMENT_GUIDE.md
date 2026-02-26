@@ -103,16 +103,10 @@ docker compose exec app uv run python manage.py makemigrations
 
 ### Persistent Data
 Your data is stored in the host directory where you run Docker:
-- **Database**: Located at `${DOCKER_PROJECT_ROOT}/data/db.sqlite3`.
-- **Player Images**: Located at `${DOCKER_PROJECT_ROOT}/players/`.
+- **Database**: Located at `./data/db.sqlite3`.
+- **Player Images**: Located at `./players/`.
 
-By default, `${DOCKER_PROJECT_ROOT}` is the same folder as your `docker-compose.yml`. 
-
-### Customizing the Storage Location
-If you want to store your data in a specific location like `/home/stu/dockerproj/teamsheets`, add this to your `.env` file:
-```bash
-DOCKER_PROJECT_ROOT=/home/stu/dockerproj/teamsheets
-```
+When you update the application (via `git pull`), **these folders are NEVER overwritten** because they are excluded from the repository.
 
 When you update the application, **these folders are NOT deleted or overwritten**. You can safely backup these folders to preserve your entire application state.
 
