@@ -35,8 +35,8 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 WORKDIR /app/backend
 
-# Create static directories and pre-collect static files (optional but good for WhiteNoise)
-RUN mkdir -p static/players static/pitch-assets
+# Create static and data directories
+RUN mkdir -p static/players static/pitch-assets data
 RUN uv run python manage.py collectstatic --noinput
 
 # Expose port 8000

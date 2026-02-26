@@ -101,9 +101,16 @@ To create new migrations after model changes:
 docker compose exec app uv run python manage.py makemigrations
 ```
 
+### Persistent Data
+Your data is stored in the host directory where you run Docker:
+- **Database**: Located at `./data/db.sqlite3`.
+- **Player Images**: Located at `./players/`.
+
+When you update the application, **these folders are NOT deleted or overwritten**. You can safely backup these folders to preserve your entire application state.
+
 ### Static Assets
-Player headshots should be placed in `backend/static/players/` on the host machine (if mapped) or within the container volume.
-- **Naming Convension**: `surname-forename/head.png` or `firstname-lastname.png`.
+Player headshots should be placed in the `./players/` directory on your host machine.
+- **Naming Convention**: `surname-forename/head.png` or `firstname-lastname.png`.
 
 ---
 
