@@ -1,98 +1,72 @@
-# Rugby Team Sheet Sidecar
+# Rugby Team Sheets
 
-A web application that transforms Google Sheets data into professional, social-media-ready rugby team sheet graphics.
+A professional web application for managing rugby team selections and generating social-media-ready graphics.
+
+## Architecture
+
+- **Backend**: Django REST Framework (Python 3.14)
+- **Frontend**: React + Vite + Tailwind CSS
+- **Database**: SQLite (default)
+- **Integration**: Spond API for availability and event management.
 
 ## Features
 
-- **OAuth Authentication**: Secure Google Sheets integration using OAuth 2.0
-- **Template Detection**: Automatically detects match templates (Thirds, Quarters, Halves)
-- **SVG Graphics**: High-quality, scalable team sheet generation
-- **Player Management**: Automatic player image mapping with fallback silhouettes
-- **Export Functionality**: High-resolution PNG export for social media
-- **Docker Ready**: Containerized deployment support
+- **Team Management**: Create and manage multiple teams and seasons.
+- **Spond Sync**: Automatically synchronize player availability and match details from Spond.
+- **Lineup Builder**: Drag-and-drop interface for building match-day lineups.
+- **Graphic Generation**: Generate high-reousltion PNG graphics for social media (Standard & Mobile formats).
+- **Player Database**: Maintain a database of players with automatic image mapping.
 
 ## Setup
 
-### 1. Google Cloud Console Setup
+### Development
 
-1. Create a new project in [Google Cloud Console](https://console.cloud.google.com/)
-2. Enable the Google Sheets API and Google Drive API
-3. Create OAuth 2.0 credentials:
-   - Go to "Credentials" → "Create Credentials" → "OAuth client ID"
-   - Select "Web application"
-   - Add authorized redirect URI: `http://localhost:5000/oauth/callback`
-   - Note your Client ID and Client Secret
+1. **Backend Setup**:
+   ```bash
+   cd backend
+   uv sync
+   # Set up environment variables in .env
+   uv run python manage.py migrate
+   uv run python manage.py runserver
+   ```
 
-### 2. Environment Configuration
+2. **Frontend Setup**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-Copy `.env.example` to `.env` and fill in your credentials:
+## Deployment & Upgrades
 
+### Initial Build
 ```bash
-cp .env.example .env
+docker-compose up --build -d
 ```
 
-Edit `.env` with your values:
-- `GOOGLE_CLIENT_ID`: Your OAuth client ID
-- `GOOGLE_CLIENT_SECRET`: Your OAuth client secret
-- `GOOGLE_SHEET_ID`: Your Google Sheet ID (from URL)
-- `FLASK_SECRET_KEY`: Generate a secure secret key
+### Upgrading to a New Version
+When you have new code or database changes:
+1. `git pull`
+2. `docker-compose build`
+3. `docker-compose up -d`
+4. `docker-compose exec backend uv run python manage.py migrate`
 
-### 3. Installation & Running
+For detailed steps, see the [upgrade workflow](file:///home/stuart/Development/TeamSheets/_agents/workflows/upgrade.md).
 
-```bash
-# Install dependencies
-uv sync
+## Environment Variables
 
-# Run development server
-uv run python app.py
-```
+The following variables are required in your `.env` file (root or `backend/`):
 
-The application will be available at http://localhost:5000
+- `SPOND_USERNAME`: Your Spond account email.
+- `SPOND_PASSWORD`: Your Spond account password.
+- `GOOGLE_SHEET_ID`: (Legacy) ID of the Google Sheet if still using sheet sync.
+- `SECRET_KEY`: Django secret key.
 
-### 4. Docker Deployment
+## Static Assets
 
-```bash
-# Build and run with Docker Compose
-docker-compose up -d
-```
-
-## Usage
-
-1. **Authenticate**: Click "Connect to Google Sheets" and authorize access
-2. **Select Match**: Choose a worksheet from your Google Sheet
-3. **Customize**: Adjust metadata and select featured player
-4. **Export**: Download high-resolution PNG for social media
-
-## Google Sheet Structure
-
-Your Google Sheet should follow this format:
-
-- **Cell B1**: Template type ("Single Match - Quarters", "Single Match - Halves", "Single Match - Thirds")
-- **Column H**: Player names for Quarters matches
-- **Column U**: Player names for Halves matches  
-- **Column AB**: Player names for Thirds matches
-- **Rows 5-19**: Starting players (15 players)
-- **Rows 20-34**: Substitute players (up to 15 players)
-
-## Player Images
-
-Place player headshots in `/static/players/` with naming convention:
-- Format: `player-name.png` (lowercase, hyphens instead of spaces)
-- Example: `john-smith.png`
-
-Missing images will automatically use a player silhouette fallback.
-
-## Development
-
-The application includes mock data that works without Google Sheets setup, allowing you to test the UI and functionality immediately.
-
-## Security Notes
-
-- Never commit `.env` files or credentials to version control
-- Use HTTPS in production for OAuth callbacks
-- Regularly rotate your OAuth client secrets
-- Limit API access to necessary scopes only
+Player headshots should be placed in `backend/static/players/`.
+- Format: `surname-forename/head.png` or `firstname-lastname.png`
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License

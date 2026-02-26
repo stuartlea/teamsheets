@@ -1,15 +1,30 @@
 version: '3.8'
 
 services:
-  rugby-sidecar:
-    build: .
-    ports:
-      - "5000:5000"
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     volumes:
-      - ./credentials.json:/app/credentials.json:ro
-      - ./static/players:/app/static/players:ro
-      - ./static/pitch-assets:/app/static/pitch-assets:ro
+      - .:/app
     environment:
-      - FLASK_ENV=production
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - SPOND_USERNAME=${SPOND_USERNAME}
+      - SPOND_PASSWORD=${SPOND_PASSWORD}
       - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+    ports:
+      - "8000:8000"
     restart: unless-stopped
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  static_volume:
