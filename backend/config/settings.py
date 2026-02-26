@@ -28,6 +28,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# Prevent Django from appending slashes to URLs (crucial for REST APIs with PUT/POST)
+APPEND_SLASH = False
+
 
 # Application definition
 
