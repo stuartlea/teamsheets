@@ -98,6 +98,15 @@ export default function PlayerDashboard() {
         }
     });
 
+    const deleteMutation = useMutation({
+        mutationFn: () => playerService.delete(playerId),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['roster']);
+            alert('Player Deleted');
+            navigate(-1);
+        }
+    });
+
     if (isLoading) return <div className="p-8 text-white">Loading...</div>;
 
     const handleSubmit = (e) => {
@@ -179,6 +188,17 @@ export default function PlayerDashboard() {
                         </div>
 
                         <div className="pt-6 flex justify-end gap-3">
+                             <button 
+                                type="button"
+                                onClick={() => {
+                                    if (window.confirm('Are you sure you want to PERMANENTLY delete this player? This will also remove them from all match sheets and stats.')) {
+                                        deleteMutation.mutate();
+                                    }
+                                }}
+                                className="mr-auto px-4 py-2 rounded text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-2"
+                             >
+                                <Trash2 size={18} /> Delete Player
+                             </button>
                              <button 
                                 type="button"
                                 onClick={() => navigate(-1)}

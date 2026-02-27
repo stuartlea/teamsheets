@@ -23,5 +23,8 @@ export const playerService = {
   saveMatchSelection: (matchId, selectionData) => api.post(`/matches/${matchId}/team`, selectionData),
 
   // Merge players - Need to implement logic in PlayerViewSet if not present
-  merge: (sourceId, targetId) => api.post('/players/merge/', { source_id: sourceId, target_id: targetId })
+  merge: (sourceId, targetId) => api.post('/players/merge/', { source_id: sourceId, target_id: targetId }),
+
+  // Delete player
+  delete: (id) => api.delete(`/players/${id}`)
 };
