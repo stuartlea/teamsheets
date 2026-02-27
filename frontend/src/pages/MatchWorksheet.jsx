@@ -60,7 +60,9 @@ export default function MatchWorksheet() {
         location: formData.get('location'),
         opponent_name: formData.get('opponent_name'),
         notes: formData.get('notes'),
-        featured_player: formData.get('featured_player') || null
+        featured_player: formData.get('featured_player') || null,
+        featured_label: formData.get('featured_label'),
+        team_sheet_title: formData.get('team_sheet_title')
     };
     updateMatchMutation.mutate(data);
   };

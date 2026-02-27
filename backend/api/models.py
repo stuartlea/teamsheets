@@ -142,6 +142,8 @@ class Match(models.Model):
     # Metadata for Team Sheets
     notes = models.TextField(null=True, blank=True)
     featured_player = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='featured_in_matches')
+    featured_label = models.CharField(max_length=50, null=True, blank=True)
+    team_sheet_title = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "Matches"

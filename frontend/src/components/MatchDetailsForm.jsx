@@ -11,14 +11,41 @@ export default function MatchDetailsForm({ match, onSubmit, isPending }) {
     const [opponent, setOpponent] = useState(match.opponent_name || '');
     const [notes, setNotes] = useState(match.notes || '');
     const [featuredPlayer, setFeaturedPlayer] = useState(match.featured_player || '');
+    const [featuredLabel, setFeaturedLabel] = useState(match.featured_label || 'Captain');
+    const [teamSheetTitle, setTeamSheetTitle] = useState(match.team_sheet_title || 'SANDBACH RUFC U15s');
     const [showSuggestions, setShowSuggestions] = useState(false);
 
-    // Fetch roster for featured player dropdown
-    const { data: rosterData } = useQuery({
-        queryKey: ['roster'],
-        queryFn: playerService.getAll
+    // Fetch match selection to filter featured player dropdown
+    const { data: selectionData } = useQuery({
+        queryKey: ['match-selection', match.id],
+        queryFn: () => playerService.getMatchSelection(match.id),
+        enabled: !!match.id
     });
-    const players = rosterData || [];
+
+    const selectedPlayers = React.useMemo(() => {
+        if (!selectionData?.periods) return [];
+        const seen = new Set();
+        const players = [];
+        Object.values(selectionData.periods).forEach(period => {
+            if (period.starters) {
+                period.starters.forEach(p => {
+                    if (p && p.id && !seen.has(p.id)) {
+                        seen.add(p.id);
+                        players.push(p);
+                    }
+                });
+            }
+            if (period.finishers) {
+                period.finishers.forEach(p => {
+                    if (p && p.id && !seen.has(p.id)) {
+                        seen.add(p.id);
+                        players.push(p);
+                    }
+                });
+            }
+        });
+        return players.sort((a, b) => a.name.localeCompare(b.name));
+    }, [selectionData]);
 
     // Fetch historical locations
     const { data: locationsData } = useQuery({
@@ -191,23 +218,64 @@ export default function MatchDetailsForm({ match, onSubmit, isPending }) {
             </div>
 
             <div>
-                <label className="block text-sm font-semibold text-slate-400 mb-1">Featured Player</label>
-                <select 
-                    name="featured_player"
-                    value={featuredPlayer}
-                    onChange={(e) => setFeaturedPlayer(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none appearance-none"
-                >
-                    <option value="">No Featured Player</option>
-                    {players.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                </select>
-                <p className="text-xs text-slate-500 mt-1">This player will be highlighted on the team sheet.</p>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Team Sheet Title</label>
+                <input 
+                    name="team_sheet_title"
+                    value={teamSheetTitle}
+                    onChange={(e) => setTeamSheetTitle(e.target.value)}
+                    placeholder="e.g. SANDBACH RUFC U15s"
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
+                />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-semibold text-slate-400 mb-1">Featured Player</label>
+                    <select 
+                        name="featured_player"
+                        value={featuredPlayer}
+                        onChange={(e) => setFeaturedPlayer(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none appearance-none"
+                    >
+                        <option value="">No Featured Player</option>
+                        {selectedPlayers.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-semibold text-slate-400 mb-1">Label</label>
+                    <select 
+                        name="featured_label"
+                        value={featuredLabel}
+                        onChange={(e) => setFeaturedLabel(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none appearance-none"
+                    >
+                        <option value="Captain">Captain</option>
+                        <option value="Man of the Match">Man of the Match</option>
+                        <option value="Featured Star">Featured Star</option>
+                    </select>
+                </div>
             </div>
 
             <div>
                 <label className="block text-sm font-semibold text-slate-400 mb-1">Team Sheet Notes / Kit</label>
+                <div className="flex gap-2 mb-2">
+                    {[
+                        { label: 'Number 1s', val: "Number 1's post match" },
+                        { label: 'Polos', val: 'Polos and Chinos post match' },
+                        { label: 'None', val: '' }
+                    ].map(tpl => (
+                        <button
+                            key={tpl.label}
+                            type="button"
+                            onClick={() => setNotes(tpl.val)}
+                            className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors"
+                        >
+                            {tpl.label}
+                        </button>
+                    ))}
+                </div>
                 <textarea 
                     name="notes"
                     value={notes}
@@ -216,7 +284,6 @@ export default function MatchDetailsForm({ match, onSubmit, isPending }) {
                     rows={3}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
                 />
-                <p className="text-xs text-slate-500 mt-1">Appears at the bottom of the generated team sheet image.</p>
             </div>
 
             <div className="pt-4 flex justify-end border-t border-slate-700 mt-6">

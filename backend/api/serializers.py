@@ -164,7 +164,7 @@ class MatchSerializer(serializers.ModelSerializer):
             'away_tries', 'away_cons', 'away_pens', 'away_drop_goals',
             'format', 'format_id', 
             'spond_event_id', 'spond_availability_id', 'team_season_scoring',
-            'notes', 'featured_player'
+            'notes', 'featured_player', 'featured_label', 'team_sheet_title'
         ]
 
 class AvailabilitySerializer(serializers.ModelSerializer):

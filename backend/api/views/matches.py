@@ -109,7 +109,9 @@ class MatchViewSet(viewsets.ModelViewSet):
                 'team_name': match.team_season.team.name if match.team_season else 'Team',
                 'notes': match.notes,
                 'featured_player_id': match.featured_player_id,
-                'featured_player_name': match.featured_player.name if match.featured_player else ''
+                'featured_player_name': match.featured_player.name if match.featured_player else '',
+                'featured_label': match.featured_label,
+                'team_sheet_title': match.team_sheet_title
             }
             
             metadata = {
@@ -117,7 +119,9 @@ class MatchViewSet(viewsets.ModelViewSet):
                  'meet_time': fixture_info['meet_time'],
                  'location': fixture_info['location'],
                  'notes': match.notes,
-                 'featured_player': match.featured_player.name if match.featured_player else ''
+                 'featured_player': match.featured_player.name if match.featured_player else '',
+                 'featured_label': match.featured_label,
+                 'team_sheet_title': match.team_sheet_title
             }
                 
             return Response({

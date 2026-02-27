@@ -75,11 +75,13 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                 kickoff: meta.kickoff || '',
                 meet_time: meta.meet_time || '',
                 location: meta.location || '',
-                notes: meta.notes || ''
+                notes: meta.notes || '',
+                custom_title: meta.team_sheet_title || 'SANDBACH RUFC U15s'
             }));
 
             // Initialize Preview-specific state from DB if available
             if (meta.featured_player) setFeaturedPlayer(meta.featured_player);
+            if (meta.featured_label) setFeaturedLabelType(meta.featured_label);
             if (meta.notes) setKitText(meta.notes);
         }
     }, [teamData]);
@@ -217,83 +219,6 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                                     <option value="Standard">Standard (1000x1250)</option>
                                     <option value="Mobile">Mobile / Story (1080x1920)</option>
                                 </select>
-                            </div>
-
-                            {/* Feature Player */}
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">Featured Player</label>
-                                <select 
-                                    value={featuredPlayer}
-                                    onChange={e => setFeaturedPlayer(e.target.value)}
-                                    className="w-full p-2 border rounded shadow-sm text-sm"
-                                >
-                                    <option value="">Select player...</option>
-                                    {teamData.starters.map(p => p.name && (
-                                        <option key={p.name} value={p.name}>{p.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Feature Label */}
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">Label Type</label>
-                                <select 
-                                    value={featuredLabelType}
-                                    onChange={e => setFeaturedLabelType(e.target.value)}
-                                    className="w-full p-2 border rounded shadow-sm text-sm"
-                                >
-                                    <option value="Featured Star">Featured Star</option>
-                                    <option value="Captain">Captain</option>
-                                    <option value="Man of the Match">Man of the Match</option>
-                                    <option value="Custom">Custom...</option>
-                                </select>
-                                {featuredLabelType === 'Custom' && (
-                                    <input 
-                                        type="text" 
-                                        value={featuredLabelCustom}
-                                        onChange={e => setFeaturedLabelCustom(e.target.value)}
-                                        placeholder="Enter Label"
-                                        className="w-full mt-2 p-2 border rounded shadow-sm text-sm"
-                                    />
-                                )}
-                            </div>
-
-                            {/* Metadata Overrides */}
-                            <div className="space-y-3 pt-4 border-t border-slate-200">
-                                <h3 className="font-semibold text-sm text-slate-500 uppercase">Team Sheet Title</h3>
-                                <div>
-                                    <input 
-                                        type="text" 
-                                        value={metadata.custom_title}
-                                        onChange={e => setMetadata({...metadata, custom_title: e.target.value})}
-                                        className="w-full p-2 border rounded text-sm"
-                                        placeholder="e.g. SANDBACH RUFC U15s"
-                                    />
-                                </div>
-                            </div>
-                            
-                            {/* Kit Text */}
-                            <div className="pt-4 border-t border-slate-200">
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">Instructions / Kit</label>
-                                <select 
-                                    value={kitText}
-                                    onChange={e => setKitText(e.target.value)}
-                                    className="w-full p-2 border rounded shadow-sm text-sm"
-                                >
-                                    <option value="" disabled>Select instructions...</option>
-                                    <option value="Number 1s">Number 1s</option>
-                                    <option value="Polos">Polos/Chinos</option>
-                                    <option value="None">Leave Empty</option>
-                                    <option value="Custom">Custom</option>
-                                </select>
-                                {kitText === 'Custom' && (
-                                    <textarea 
-                                        value={kitTextCustom}
-                                        onChange={e => setKitTextCustom(e.target.value)}
-                                        className="w-full mt-2 p-2 border rounded shadow-sm text-sm"
-                                        rows={2}
-                                    />
-                                )}
                             </div>
 
                             {/* Download Size */}
