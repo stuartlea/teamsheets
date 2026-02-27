@@ -163,7 +163,8 @@ class MatchSerializer(serializers.ModelSerializer):
             'home_tries', 'home_cons', 'home_pens', 'home_drop_goals',
             'away_tries', 'away_cons', 'away_pens', 'away_drop_goals',
             'format', 'format_id', 
-            'spond_event_id', 'spond_availability_id', 'team_season_scoring'
+            'spond_event_id', 'spond_availability_id', 'team_season_scoring',
+            'notes', 'featured_player'
         ]
 
 class AvailabilitySerializer(serializers.ModelSerializer):

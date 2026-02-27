@@ -138,6 +138,10 @@ class Match(models.Model):
     spond_availability_id = models.CharField(max_length=100, null=True, blank=True)
     
     source = models.CharField(max_length=50, default='Manual')
+    
+    # Metadata for Team Sheets
+    notes = models.TextField(null=True, blank=True)
+    featured_player = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='featured_in_matches')
 
     class Meta:
         verbose_name_plural = "Matches"

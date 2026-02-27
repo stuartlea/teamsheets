@@ -58,7 +58,9 @@ export default function MatchWorksheet() {
         kickoff_time: formData.get('kickoff'),
         meet_time: formData.get('meet_time'),
         location: formData.get('location'),
-        opponent_name: formData.get('opponent_name')
+        opponent_name: formData.get('opponent_name'),
+        notes: formData.get('notes'),
+        featured_player: formData.get('featured_player') || null
     };
     updateMatchMutation.mutate(data);
   };

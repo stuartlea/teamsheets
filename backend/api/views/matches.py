@@ -106,13 +106,18 @@ class MatchViewSet(viewsets.ModelViewSet):
                 'location': match.location,
                 'opponent_name': match.opponent_name,
                 'home_away': match.home_away,
-                'team_name': match.team_season.team.name if match.team_season else 'Team'
+                'team_name': match.team_season.team.name if match.team_season else 'Team',
+                'notes': match.notes,
+                'featured_player_id': match.featured_player_id,
+                'featured_player_name': match.featured_player.name if match.featured_player else ''
             }
             
             metadata = {
                  'kickoff': fixture_info['kickoff'],
                  'meet_time': fixture_info['meet_time'],
-                 'location': fixture_info['location']
+                 'location': fixture_info['location'],
+                 'notes': match.notes,
+                 'featured_player': match.featured_player.name if match.featured_player else ''
             }
                 
             return Response({

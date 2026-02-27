@@ -74,8 +74,13 @@ export default function TeamSheetPreview({ matchId, isOpen, onClose }) {
                 match_date: dateStr,
                 kickoff: meta.kickoff || '',
                 meet_time: meta.meet_time || '',
-                location: meta.location || ''
+                location: meta.location || '',
+                notes: meta.notes || ''
             }));
+
+            // Initialize Preview-specific state from DB if available
+            if (meta.featured_player) setFeaturedPlayer(meta.featured_player);
+            if (meta.notes) setKitText(meta.notes);
         }
     }, [teamData]);
 

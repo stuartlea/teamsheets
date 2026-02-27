@@ -2,13 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Clock, Search, Home, X, MapPin } from 'lucide-react';
 import { fixtureService } from '../services/fixtures';
+import { playerService } from '../services/players';
 
 export default function MatchDetailsForm({ match, onSubmit, isPending }) {
     const [kickoff, setKickoff] = useState(match.kickoff_time || '');
     const [meetTime, setMeetTime] = useState(match.meet_time || '');
     const [location, setLocation] = useState(match.location || '');
     const [opponent, setOpponent] = useState(match.opponent_name || '');
+    const [notes, setNotes] = useState(match.notes || '');
+    const [featuredPlayer, setFeaturedPlayer] = useState(match.featured_player || '');
     const [showSuggestions, setShowSuggestions] = useState(false);
+
+    // Fetch roster for featured player dropdown
+    const { data: rosterData } = useQuery({
+        queryKey: ['roster'],
+        queryFn: playerService.getAll
+    });
+    const players = rosterData || [];
 
     // Fetch historical locations
     const { data: locationsData } = useQuery({
@@ -178,6 +188,35 @@ export default function MatchDetailsForm({ match, onSubmit, isPending }) {
                         <Search size={12} /> Search Address
                     </button>
                 </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Featured Player</label>
+                <select 
+                    name="featured_player"
+                    value={featuredPlayer}
+                    onChange={(e) => setFeaturedPlayer(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none appearance-none"
+                >
+                    <option value="">No Featured Player</option>
+                    {players.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">This player will be highlighted on the team sheet.</p>
+            </div>
+
+            <div>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Team Sheet Notes / Kit</label>
+                <textarea 
+                    name="notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Number 1s post-match, arrive in polos..."
+                    rows={3}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:border-blue-500 outline-none"
+                />
+                <p className="text-xs text-slate-500 mt-1">Appears at the bottom of the generated team sheet image.</p>
             </div>
 
             <div className="pt-4 flex justify-end border-t border-slate-700 mt-6">
