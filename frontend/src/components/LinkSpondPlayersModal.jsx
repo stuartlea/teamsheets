@@ -124,11 +124,7 @@ export default function LinkSpondPlayersModal({ isOpen, onClose, team, players =
     const linkMutation = useMutation({
         mutationFn: async (payload) => {
             const promises = payload.map(item => 
-                fetch(`/api/players/${item.playerId}/link-spond`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ spond_id: item.spondId })
-                }).then(res => res.json())
+                spondService.linkPlayer(item.playerId, item.spondId)
             );
             return Promise.all(promises);
         },

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { playerService } from '../services/players';
 import { spondService } from '../services/spond';
+import api from '../services/api';
 import { ArrowLeft, Save, Trash2, Calendar, Link as LinkIcon } from 'lucide-react';
 
 export default function PlayerDashboard() {
@@ -88,15 +89,7 @@ export default function PlayerDashboard() {
     }, [playerData]);
 
     const updateMutation = useMutation({
-        mutationFn: async (data) => {
-            // Service call
-            const res = await fetch(`/api/players/${playerId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            return res.json();
-        },
+        mutationFn: (data) => api.put(`/players/${playerId}`, data),
         onSuccess: () => {
             queryClient.invalidateQueries(['player', playerId]);
             queryClient.invalidateQueries(['roster']); // Invalidate lists too
